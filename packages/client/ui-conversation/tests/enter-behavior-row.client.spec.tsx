@@ -30,15 +30,18 @@ function emptyWorkspaces() {
 function mount() {
   const policy = new ComposerSubmissionPolicy()
   const setBusyEnter = vi.fn((behavior: 'queue' | 'steer') => { policy.setBusyEnter(behavior) })
+  const setEnterMode = vi.fn((mode: 'send' | 'newline') => { policy.setEnterMode(mode) })
   const props: EnterBehaviorRowProps = {
     useSessions: emptySessions(),
     useWorkspaces: emptyWorkspaces(),
     useBusyEnter: bindSnapshotSelector(policy.busyEnter),
     setBusyEnter,
+    useEnterMode: bindSnapshotSelector(policy.enterMode),
+    setEnterMode,
     t: makeTranslate(en),
   }
   render(<EnterBehaviorRow {...props} />)
-  return { policy, setBusyEnter }
+  return { policy, setBusyEnter, setEnterMode }
 }
 
 describe('EnterBehaviorRow', () => {
@@ -63,5 +66,15 @@ describe('EnterBehaviorRow', () => {
     expect(screen.getByRole('menuitem', { name: 'Steer' })).toBeDefined()
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('menuitem', { name: 'Steer' })).toBeNull()
+  })
+
+  it('shows Send by default for idle Enter and selects Newline', () => {
+    const b = mount()
+    expect(screen.getByText('Enter behavior while idle')).toBeDefined()
+    const trigger = screen.getByRole('button', { name: /Send/ })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Newline' }))
+    expect(b.setEnterMode).toHaveBeenCalledWith('newline')
+    expect(screen.getByRole('button', { name: /Newline/ })).toBeDefined()
   })
 })

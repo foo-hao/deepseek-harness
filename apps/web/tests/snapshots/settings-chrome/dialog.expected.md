@@ -43,3 +43,7 @@
   - button "排队发送":
     - text: 排队发送
     - img
+  - text: 空闲时 Enter 键行为 仅在智能体空闲时生效；繁忙时由上方选项控制
+  - button "发送":
+    - text: 发送
+    - img

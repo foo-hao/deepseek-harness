@@ -47,7 +47,7 @@ export type InputBarProps = ComposerBarProps
 export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
   resolveSubmitMode, toggleCommandMenu, stop, command, t,
-  renderSlot, useNotices, useLexicon, useMenuLauncher,
+  renderSlot, useNotices, useLexicon, useMenuLauncher, useEnterMode,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
@@ -56,6 +56,7 @@ export function InputBar({
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const enterMode = useEnterMode(value => value)
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -334,10 +335,14 @@ export function InputBar({
       e.preventDefault()
       return
     }
+    const accelerated = e.ctrlKey || e.metaKey
+    // Idle plain Enter configured as newline falls through to the native
+    // insertion; busy, locked, adjudicating/submitting, and accelerated Enter
+    // keep their existing gestures.
+    if (!accelerated && !running && !locked && !machineBusy && enterMode === 'newline') return
     e.preventDefault()
     if (e.repeat) return // held-down Enter must not machine-gun sends
     if (locked || machineBusy) return
-    const accelerated = e.ctrlKey || e.metaKey
     // Empty-draft accelerated Enter acts on the queue instead of the (empty)
     // draft: the machine rejects empty drafts, so the gesture steers every
     // still-pending queued message into the running turn (the dock's per-row
@@ -560,6 +565,21 @@ export function InputBar({
   const primaryStops = running && subagent === null
   const interruptible = running && continuable
   const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
+  const actionPlaceholder = placeholder ?? (parentOffline
+    ? t('placeholder.parentOffline')
+    : disabled
+      ? t('placeholder.unavailable')
+      // The steer hint deliberately outranks the plan placeholder: while it
+      // shows, the whole-queue gesture is genuinely available (the gate never
+      // consults plan mode), so the actionable hint wins.
+      : canSteerQueue
+        ? t('placeholder.steerQueue')
+        : planActive ? t('placeholder.plan') : t('placeholder.default'))
+  // Newline mode keeps each surface's action prompt and makes its accelerated
+  // send chord discoverable only while the idle composer can accept it.
+  const inputPlaceholder = !running && !disabled && !machineBusy && enterMode === 'newline'
+    ? t('placeholder.newlineMode', { prompt: actionPlaceholder })
+    : actionPlaceholder
   const onPrimary = (): void => {
     if (primaryStops) {
       stop?.()
@@ -722,16 +742,7 @@ export function InputBar({
               aria-haspopup={workspaceTrigger ? 'menu' : undefined}
               aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
               data-phase={input?.phase ?? 'inert'}
-              placeholder={placeholder ?? (parentOffline
-                ? t('placeholder.parentOffline')
-                : disabled
-                  ? t('placeholder.unavailable')
-                  // The steer hint deliberately outranks the plan placeholder:
-                  // while it shows, the whole-queue gesture is genuinely available
-                  // (the gate never consults plan mode), so the actionable hint wins.
-                  : canSteerQueue
-                    ? t('placeholder.steerQueue')
-                    : planActive ? t('placeholder.plan') : t('placeholder.default'))}
+              placeholder={inputPlaceholder}
               rows={2}
               onChange={onChange}
               onKeyDown={onKeyDown}

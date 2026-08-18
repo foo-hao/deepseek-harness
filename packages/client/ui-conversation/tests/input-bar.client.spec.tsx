@@ -88,6 +88,7 @@ interface BenchOptions {
   addImages?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
+  enterMode?: 'newline' | 'send'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
 }
 
@@ -134,6 +135,7 @@ function bench(over?: BenchOptions) {
   const stop = vi.fn()
   const removeImage = vi.fn((id: DraftAttachmentId) => { shell.removeImage(id) })
   const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
+  const enterModeStore = createSnapshotStore<'newline' | 'send'>(over?.enterMode ?? 'send')
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, owner })
@@ -175,6 +177,7 @@ function bench(over?: BenchOptions) {
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
+    useEnterMode: bindSnapshotSelector(enterModeStore),
     stop,
     command: over?.command ?? (() => Promise.resolve(true)),
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -199,7 +202,7 @@ function bench(over?: BenchOptions) {
   const interruptButton = view.container.querySelector<HTMLButtonElement>('button[aria-label="停止生成"]')
   return {
     view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeImage, slotCalls,
-    menuLauncher,
+    menuLauncher, enterModeStore,
     steerQueue: over?.steerQueue,
   }
 }
@@ -422,6 +425,26 @@ describe('image draft rail', () => {
 })
 
 describe('Enter semantics', () => {
+  it('advertises the idle Newline chord while preserving the active action prompt', () => {
+    const idle = bench()
+    expect(idle.textarea.placeholder).toBe('给智能体发消息')
+    act(() => { idle.enterModeStore.set('newline') })
+    expect(idle.textarea.placeholder).toBe('给智能体发消息 · Enter 换行，Cmd/Ctrl+Enter 发送')
+    act(() => { idle.enterModeStore.set('send') })
+    expect(idle.textarea.placeholder).toBe('给智能体发消息')
+
+    expect(bench({
+      enterMode: 'newline',
+      plan: { active: true, pending: false },
+    }).textarea.placeholder).toBe('描述你的任务以生成计划 · Enter 换行，Cmd/Ctrl+Enter 发送')
+    expect(bench({
+      enterMode: 'newline',
+      placeholder: '上层指定提示',
+    }).textarea.placeholder).toBe('上层指定提示 · Enter 换行，Cmd/Ctrl+Enter 发送')
+    expect(bench({ running: true, enterMode: 'newline' }).textarea.placeholder).toBe('给智能体发消息')
+    expect(bench({ disabled: true, enterMode: 'newline' }).textarea.placeholder).toBe('会话不可用')
+  })
+
   it('advertises the empty-draft whole-queue steering gesture when it is available', () => {
     const { textarea } = bench({ running: true, queue: [row('q-1')], steerQueue: vi.fn() })
     expect(textarea.placeholder).toBe('Cmd/Ctrl+Enter 插话发送全部排队消息')
@@ -613,6 +636,65 @@ describe('Enter semantics', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('idle plain Enter falls through to the native newline in Newline mode', () => {
+    const { textarea, sink } = bench({ draft: 'hello', enterMode: 'newline' })
+    expect(fireEvent.keyDown(textarea, { key: 'Enter' })).toBe(true)
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('Newline mode keeps the busy Queue/Steer mapping and idle accelerated send', () => {
+    const busyQueue = bench({ running: true, draft: 'busy queue', enterMode: 'newline' })
+    fireEvent.keyDown(busyQueue.textarea, { key: 'Enter' })
+    expect(busyQueue.sink).toHaveBeenCalledWith('busy queue', [], 'queue')
+
+    const busySteer = bench({
+      running: true,
+      busyEnter: 'steer',
+      draft: 'busy steer',
+      enterMode: 'newline',
+    })
+    fireEvent.keyDown(busySteer.textarea, { key: 'Enter' })
+    expect(busySteer.sink).toHaveBeenCalledWith('busy steer', [], 'steer')
+
+    const busyQueueAccelerated = bench({
+      running: true,
+      busyEnter: 'steer',
+      draft: 'busy queue accelerated',
+      enterMode: 'newline',
+    })
+    fireEvent.keyDown(busyQueueAccelerated.textarea, { key: 'Enter', metaKey: true })
+    expect(busyQueueAccelerated.sink).toHaveBeenCalledWith('busy queue accelerated', [], 'queue')
+
+    const accelerated = bench({ draft: 'cmd', enterMode: 'newline' })
+    fireEvent.keyDown(accelerated.textarea, { key: 'Enter', metaKey: true })
+    expect(accelerated.sink).toHaveBeenCalledWith('cmd', [], 'queue')
+  })
+
+  it('a locked composer swallows Enter in Newline mode', () => {
+    const { textarea, sink } = bench({ disabled: true, enterMode: 'newline' })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('a submitting composer swallows Enter in Newline mode', () => {
+    const { view, shell, sink } = bench({ enterMode: 'newline' })
+    act(() => {
+      shell.setDraft('/goal ')
+      shell.beginCommand(
+        {
+          token: '/goal ',
+          submit: () => new Promise<never>(() => {}), // never settles: stays submitting
+        },
+        { start: 0, end: 6, draftRev: shell.snapshot.draftRev },
+      )
+      shell.submit()
+    })
+    expect(shell.snapshot.phase).toBe('submitting')
+    const textarea = view.container.querySelector('textarea')!
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).not.toHaveBeenCalled()
   })
 })
 

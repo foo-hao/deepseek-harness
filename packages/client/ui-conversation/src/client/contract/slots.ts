@@ -18,7 +18,7 @@ import type {
   ComposerKeyboard, DraftAttachmentId, EditSelection, InputActions, InputNotice, InputState,
 } from '../input/contract.ts'
 import type { createChatStore } from '../stores.ts'
-import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
+import type { ComposerSubmitGesture, EnterMode, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
 
@@ -518,8 +518,8 @@ export interface ComposerBarInjected {
   command: ((line: string) => Promise<boolean>) | undefined
   /**
    * Registrant hooks compartment: the renderer binds these to
-   * useNotices/useLexicon (static absent sources without a session — hook
-   * order stays constant).
+   * useNotices/useLexicon/useEnterMode (absent sources without a session are
+   * static constants, so hook order stays constant).
    */
   hooks: {
     /** Latest surfaced notice (null after none; seq keys re-render of repeats). */
@@ -529,6 +529,8 @@ export interface ComposerBarInjected {
     lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>
     /** Source name opened by the programmatic menu launcher, or null. */
     menuLauncher: ObservableSnapshot<string | null>
+    /** Plain-Enter mode while the addressed agent is idle ('newline' inserts, 'send' submits). */
+    enterMode: ObservableSnapshot<EnterMode>
   }
 }
 
