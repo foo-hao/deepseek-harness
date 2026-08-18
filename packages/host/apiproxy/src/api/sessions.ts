@@ -332,9 +332,12 @@ export interface SessionsApi {
    * title. Reading the source uses attached state or persistence inspection
    * without acquiring an Agent. Workspace attachment follows the source
    * directly, or the nearest workspace-owning ancestor when the source is a
-   * subagent.
+   * subagent. An explicit `cwd` relocates the child: the child is created
+   * with that working directory and attaches to the workspace owning that
+   * path (resolved or created on demand), instead of inheriting the source
+   * cwd.
    */
-  fork(request: RpcRequest<{ sessionId: SessionId; atSeq?: number }>):
+  fork(request: RpcRequest<{ sessionId: SessionId; atSeq?: number; cwd?: string }>):
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**

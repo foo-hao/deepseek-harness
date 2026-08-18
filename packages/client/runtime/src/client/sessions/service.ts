@@ -507,6 +507,7 @@ export class SessionRuntime implements ISessions {
   async fork(opts: {
     sessionId: SessionId
     atSeq?: number
+    cwd?: string
     increaseTitle?: boolean
   }): Promise<SessionId> {
     const sourceTitle = opts.increaseTitle
@@ -518,6 +519,7 @@ export class SessionRuntime implements ISessions {
       // turn/start), so the host's first-turn/end-at-or-after cut still ends
       // on that turn — never clipped back to the previous one.
       ...(opts.atSeq === undefined ? {} : { atSeq: Math.floor(opts.atSeq) }),
+      ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
     })
     if (!result.ok) throw new SessionForkError(result.error, opts.sessionId)
     this.projectList()

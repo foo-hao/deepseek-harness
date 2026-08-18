@@ -127,10 +127,11 @@ export const sessionRenameValueSchema = z.object({
   seq: z.number().int().nonnegative(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.rename'>>>
 
-/** session.fork request payload (atSeq anchors the completed-turn cut). */
+/** session.fork request payload (atSeq anchors the completed-turn cut; cwd relocates the child into another project). */
 export const sessionForkRequestSchema = z.object({
   sessionId: sessionIdSchema,
   atSeq: z.number().int().nonnegative().optional(),
+  cwd: z.string().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'session.fork'>>>
 
 /** session.fork response value (the child session id). */

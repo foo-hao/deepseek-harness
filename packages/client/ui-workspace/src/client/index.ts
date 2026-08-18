@@ -89,6 +89,13 @@ export function apply(ctx: ClientContext): void {
           // Fork or child-rename failure keeps the current selection.
         })
     },
+    moveSessionToProject: (sessionId, targetCwd) => {
+      ctx.sessions.fork({ sessionId, cwd: targetCwd, increaseTitle: true })
+        .then((childId) => { ctx.sessions.open(childId) })
+        .catch(() => {
+          // Relocate fork failure keeps the current selection.
+        })
+    },
     renameWorkspace: async (workspaceId, title) => { await ctx.workspaces.rename(workspaceId, title) },
     deleteWorkspace: async (workspaceId) => { await ctx.workspaces.delete(workspaceId) },
     insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {

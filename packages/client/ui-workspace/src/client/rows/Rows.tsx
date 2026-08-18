@@ -9,7 +9,7 @@ import { useState } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconArchiveOutline20, IconBranchOutline16, IconEditOutline16,
-  IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconPlusOutline16,
+  IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16, IconPlusOutline16,
   IconTrashOutline16, IconTriangleRightFill14, Menu, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -350,7 +350,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
-export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false, t }: {
+export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onMoveToProject, onArchive, drag, flat = false, t }: {
   node: SessionNode
   currentId: string | undefined
   now: number
@@ -359,6 +359,8 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   onRename: (id: SessionNode['id'], currentTitle: string) => void
   /** Fork a session at its last completed turn (row menu action). */
   onFork: (id: SessionNode['id']) => void
+  /** Relocate this session into another project (fork into a target Workspace). */
+  onMoveToProject: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
   /** Present only on draggable rows (workspace-group sessions outside search). */
@@ -380,6 +382,7 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   const sessionMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
+    { id: 'move', label: t('menu.moveToProject'), icon: <IconFolderOpenOutline16 /> },
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
   ]
@@ -443,6 +446,7 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
               setMenuOpen(false)
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
+              if (id === 'move') onMoveToProject(node.id)
               if (id === 'archive') onArchive(node.id)
             }}
             portal

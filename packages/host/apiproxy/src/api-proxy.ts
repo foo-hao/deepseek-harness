@@ -2301,7 +2301,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async fork(request) {
-        const { sessionId, atSeq } = request.payload
+        const { sessionId, atSeq, cwd } = request.payload
         let source: SessionReadState
         try {
           source = await readSessionState(sessionId)
@@ -2344,7 +2344,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         while (cut < events.length && events[cut]?.type !== 'turn/start') cut++
         let workspace: Workspace | undefined
         try {
-          workspace = await forkWorkspace(source)
+          workspace = cwd === undefined
+            ? await forkWorkspace(source)
+            : await ctx.workspaceRegistry.resolveByPath(cwd) ?? await ctx.workspaceRegistry.create(cwd)
         } catch (error: unknown) {
           return err(request, {
             code: 'internal',
@@ -2364,7 +2366,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             sessionId: childId,
             seed: events.slice(0, cut),
             meta: {
-              ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
+              ...cwd !== undefined
+                ? { cwd: workspace?.path ?? cwd }
+                : source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
               parentSession: source.id,
               seedLength: cut,
               ...forkComposition.agentPreset === undefined

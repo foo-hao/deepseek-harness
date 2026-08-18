@@ -241,6 +241,8 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Open the browser-owned move-to-project dialog. */
+  onMoveToProject: (sessionId: SessionNode['id']) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
@@ -248,7 +250,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onMoveToProject,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
@@ -515,6 +517,7 @@ function SessionTree({
                     onOpen={open}
                     onRename={onSessionRename}
                     onFork={forkSession}
+                    onMoveToProject={onMoveToProject}
                     onArchive={onSessionArchive}
                     drag={dragProps}
                     t={t}
@@ -544,7 +547,7 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
+  useSessions, open, forkSession, onSessionRename, onSessionArchive, onMoveToProject, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -553,6 +556,7 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onMoveToProject'
   | 'archivedSessionIds'
   | 'orderBy'
   | 'sessionOrderByAccount'
@@ -631,6 +635,7 @@ function FlatList({
               onOpen={open}
               onRename={onSessionRename}
               onFork={forkSession}
+              onMoveToProject={onMoveToProject}
               onArchive={onSessionArchive}
               flat
               drag={{
@@ -749,6 +754,7 @@ export function WorkspaceBrowser({
   open,
   renameSession,
   forkSession,
+  moveSessionToProject,
   renameWorkspace,
   deleteWorkspace,
   insertWorkspaceBefore,
@@ -937,6 +943,21 @@ export function WorkspaceBrowser({
     })
   }
 
+  // Move-to-project dialog: pick a target Workspace, then fork the session
+  // into that directory and open the child (the original stays put).
+  const [moveTarget, setMoveTarget] = useState<SessionNode['id'] | null>(null)
+  const moveTargetWorkspaceId = moveTarget === null
+    ? undefined
+    : workspaces.find(workspace => workspace.sessionIds.includes(moveTarget))?.workspaceId
+  const moveCandidates = workspaces.filter(workspace => workspace.workspaceId !== moveTargetWorkspaceId)
+  const onMoveToProject = (sessionId: SessionNode['id']) => { setMoveTarget(sessionId) }
+  const closeMove = () => { setMoveTarget(null) }
+  const confirmMove = (workspace: WorkspaceView) => {
+    if (moveTarget === null) return
+    moveSessionToProject(moveTarget, workspace.path)
+    setMoveTarget(null)
+  }
+
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
   const [deleteTarget, setDeleteTarget] = useState<{ workspaceId: WorkspaceId; title: string } | null>(null)
@@ -1123,7 +1144,7 @@ export function WorkspaceBrowser({
             ? (
               <FlatList
                 useSessions={useSessions} open={open} forkSession={forkSession}
-                onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionRename={onSessionRename} onSessionArchive={onSessionArchive} onMoveToProject={onMoveToProject}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1138,6 +1159,7 @@ export function WorkspaceBrowser({
                 useSessions={useSessions}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onMoveToProject={onMoveToProject}
                 forkSession={forkSession}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
@@ -1231,6 +1253,28 @@ export function WorkspaceBrowser({
           }}
         />
         {sessionRenameError !== null && <div className={css.renameError} role="alert">{sessionRenameError}</div>}
+      </Modal>
+      <Modal
+        open={moveTarget !== null}
+        onClose={closeMove}
+        closeLabel={t('close')}
+        title={t('move.title')}
+        footer={(
+          <Button variant="outline" onClick={closeMove}>{t('cancel')}</Button>
+        )}
+      >
+        {moveCandidates.length === 0 && <div className={css.renameError} role="status">{t('move.empty')}</div>}
+        {moveCandidates.map(workspace => (
+          <button
+            key={String(workspace.workspaceId)}
+            type="button"
+            className={css.moveOption}
+            onClick={() => { confirmMove(workspace) }}
+          >
+            <span className={css.moveOptionTitle}>{workspace.title}</span>
+            <span className={css.moveOptionPath}>{workspace.path}</span>
+          </button>
+        ))}
       </Modal>
       <Modal
         open={deleteTarget !== null}
