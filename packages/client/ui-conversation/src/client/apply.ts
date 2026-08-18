@@ -140,8 +140,9 @@ export function apply(ctx: Context): void {
     order: 20,
     locale: NS,
     inject: (): EnterBehaviorRowInjected => ({
-      hooks: { busyEnter: submissionPolicy.busyEnter },
+      hooks: { busyEnter: submissionPolicy.busyEnter, enterMode: submissionPolicy.enterMode },
       setBusyEnter: (behavior) => { submissionPolicy.setBusyEnter(behavior) },
+      setEnterMode: (mode) => { submissionPolicy.setEnterMode(mode) },
     }),
   }, EnterBehaviorRow))
 
@@ -297,7 +298,10 @@ export function apply(ctx: Context): void {
           toggleCommandMenu: undefined,
           stop: undefined,
           command: undefined,
-          hooks: { notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER },
+          hooks: {
+            notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER,
+            enterMode: submissionPolicy.enterMode,
+          },
         }
       }
       const conversation = concreteConversation(ctx)
@@ -355,6 +359,7 @@ export function apply(ctx: Context): void {
           notices: shell.notices,
           lexicon: shell.lexicon,
           menuLauncher: inputTriggers?.launcher ?? ABSENT_MENU_LAUNCHER,
+          enterMode: submissionPolicy.enterMode,
         },
       }
     },

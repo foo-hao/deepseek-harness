@@ -1,4 +1,4 @@
-/** Busy-Enter preference stored in the Host user-settings document. */
+/** Composer Enter preferences (busy delivery + idle mode) stored in the Host user-settings document. */
 
 import z from '@deepseek-ai/schemastery'
 
@@ -17,13 +17,28 @@ export type BusyEnterBehavior = typeof BUSY_ENTER_BEHAVIORS[number]
 /** Default preserves Enter-as-Queue for running conversations. */
 export const DEFAULT_BUSY_ENTER_BEHAVIOR: BusyEnterBehavior = 'queue'
 
+/** Field carrying the composer's plain-Enter mode while the addressed agent is idle. */
+export const ENTER_MODE_FIELD = 'enterMode'
+
+/** Enter modes accepted at settings and input boundaries. */
+export const ENTER_MODES = ['newline', 'send'] as const
+
+/** Configurable meaning of plain Enter while the addressed agent is idle. */
+export type EnterMode = typeof ENTER_MODES[number]
+
+/** Default keeps idle Enter as a send; Shift+Enter remains the newline chord. */
+export const DEFAULT_ENTER_MODE: EnterMode = 'send'
+
 /** Durable conversation section shared by the Host schema and the browser scope. */
 export interface ConversationSettings {
   /** Delivery mode for plain Enter while the addressed agent is busy. */
   busyEnter: BusyEnterBehavior
+  /** Plain-Enter mode while the addressed agent is idle. */
+  enterMode: EnterMode
 }
 
 /** Durable conversation schema; also the wire envelope the browser scope validates against. */
 export const ConversationSettingsSchema: z<ConversationSettings> = z.object({
   [BUSY_ENTER_FIELD]: z.union([...BUSY_ENTER_BEHAVIORS]).default(DEFAULT_BUSY_ENTER_BEHAVIOR),
+  [ENTER_MODE_FIELD]: z.union([...ENTER_MODES]).default(DEFAULT_ENTER_MODE),
 })

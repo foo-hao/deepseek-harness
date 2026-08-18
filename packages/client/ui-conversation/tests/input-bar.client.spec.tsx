@@ -88,6 +88,7 @@ interface BenchOptions {
   addImages?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
+  enterMode?: 'newline' | 'send'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
 }
 
@@ -175,6 +176,7 @@ function bench(over?: BenchOptions) {
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
+    useEnterMode: bindSnapshotSelector(createSnapshotStore<'newline' | 'send'>(over?.enterMode ?? 'send')),
     stop,
     command: over?.command ?? (() => Promise.resolve(true)),
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -613,6 +615,47 @@ describe('Enter semantics', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('idle plain Enter falls through to the native newline in Newline mode', () => {
+    const { textarea, sink } = bench({ draft: 'hello', enterMode: 'newline' })
+    expect(fireEvent.keyDown(textarea, { key: 'Enter' })).toBe(true)
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('Newline mode keeps the send gestures: busy plain Enter and accelerated Enter', () => {
+    const busy = bench({ running: true, draft: 'busy', enterMode: 'newline' })
+    fireEvent.keyDown(busy.textarea, { key: 'Enter' })
+    expect(busy.sink).toHaveBeenCalledWith('busy', [], 'queue')
+
+    const accelerated = bench({ draft: 'cmd', enterMode: 'newline' })
+    fireEvent.keyDown(accelerated.textarea, { key: 'Enter', metaKey: true })
+    expect(accelerated.sink).toHaveBeenCalledWith('cmd', [], 'queue')
+  })
+
+  it('a locked composer swallows Enter in Newline mode', () => {
+    const { textarea, sink } = bench({ disabled: true, enterMode: 'newline' })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('a submitting composer swallows Enter in Newline mode', () => {
+    const { view, shell, sink } = bench({ enterMode: 'newline' })
+    act(() => {
+      shell.setDraft('/goal ')
+      shell.beginCommand(
+        {
+          token: '/goal ',
+          submit: () => new Promise<never>(() => {}), // never settles: stays submitting
+        },
+        { start: 0, end: 6, draftRev: shell.snapshot.draftRev },
+      )
+      shell.submit()
+    })
+    expect(shell.snapshot.phase).toBe('submitting')
+    const textarea = view.container.querySelector('textarea')!
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).not.toHaveBeenCalled()
   })
 })
 

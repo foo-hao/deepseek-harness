@@ -7,21 +7,26 @@ import {
   createSnapshotStore, type SettingsScope, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  BusyEnterBehavior, ComposerSubmitGesture, InputSubmitMode,
+  BusyEnterBehavior, ComposerSubmitGesture, EnterMode, InputSubmitMode,
 } from '../contract/composer-submission.ts'
-import { BUSY_ENTER_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
+import {
+  BUSY_ENTER_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_ENTER_MODE, ENTER_MODE_FIELD,
+} from '../../submission-settings.ts'
 import type { ConversationSettings } from '../../submission-settings.ts'
 
-export { DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
+export { DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_ENTER_MODE } from '../../submission-settings.ts'
 
 /**
- * Busy-Enter policy used by both the composer inject face and its Settings row.
+ * Composer Enter policy used by both the composer inject face and its Settings
+ * row: the busy-state delivery preference plus the idle-state plain-Enter mode.
  * Direct `steer` is intentionally best-effort: AgentLoop turns a closed-window
  * submission into the next waking Queue item.
  */
 export class ComposerSubmissionPolicy {
   /** Reactive preference source for the Settings row. */
   readonly busyEnter: SnapshotStore<BusyEnterBehavior> = createSnapshotStore(DEFAULT_BUSY_ENTER_BEHAVIOR)
+  /** Reactive idle-Enter mode source for the Settings row and the input bar. */
+  readonly enterMode: SnapshotStore<EnterMode> = createSnapshotStore(DEFAULT_ENTER_MODE)
   private readonly host: SettingsScope<ConversationSettings> | undefined
 
   /**
@@ -68,12 +73,24 @@ export class ComposerSubmissionPolicy {
   }
 
   /**
+   * Change the plain-Enter mode used while the addressed agent is idle; the
+   * live value publishes before the durable write starts.
+   * @param mode - Native newline insertion or Send.
+   */
+  setEnterMode(mode: EnterMode): void {
+    if (this.enterMode.getSnapshot() === mode) return
+    this.enterMode.set(mode)
+    void this.host?.set(ENTER_MODE_FIELD, mode)
+  }
+
+  /**
    * Adopt the scope's accepted durable behavior without writing it back.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
   private adopt(host: SettingsScope<ConversationSettings>): void {
     const section = host.getSnapshot().value
-    if (section === undefined || this.busyEnter.getSnapshot() === section.busyEnter) return
-    this.busyEnter.set(section.busyEnter)
+    if (section === undefined) return
+    if (this.busyEnter.getSnapshot() !== section.busyEnter) this.busyEnter.set(section.busyEnter)
+    if (this.enterMode.getSnapshot() !== section.enterMode) this.enterMode.set(section.enterMode)
   }
 }

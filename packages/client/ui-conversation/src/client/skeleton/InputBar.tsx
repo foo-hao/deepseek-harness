@@ -47,7 +47,7 @@ export type InputBarProps = ComposerBarProps
 export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
   resolveSubmitMode, toggleCommandMenu, stop, command, t,
-  renderSlot, useNotices, useLexicon, useMenuLauncher,
+  renderSlot, useNotices, useLexicon, useMenuLauncher, useEnterMode,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
@@ -56,6 +56,7 @@ export function InputBar({
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const enterMode = useEnterMode(value => value)
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -334,10 +335,14 @@ export function InputBar({
       e.preventDefault()
       return
     }
+    const accelerated = e.ctrlKey || e.metaKey
+    // Idle plain Enter configured as newline falls through to the native
+    // insertion; busy, locked, adjudicating/submitting, and accelerated Enter
+    // keep their existing gestures.
+    if (!accelerated && !running && !locked && !machineBusy && enterMode === 'newline') return
     e.preventDefault()
     if (e.repeat) return // held-down Enter must not machine-gun sends
     if (locked || machineBusy) return
-    const accelerated = e.ctrlKey || e.metaKey
     // Empty-draft accelerated Enter acts on the queue instead of the (empty)
     // draft: the machine rejects empty drafts, so the gesture steers every
     // still-pending queued message into the running turn (the dock's per-row
