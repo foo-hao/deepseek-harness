@@ -22,7 +22,7 @@ if pid == 0:
     os.chdir(cwd)
     os.execvpe(node, [node, *json.loads(launch_args_json)], env)
 
-markers = [b"dsh-test: never-dispose ready", b"dsh-test: never-dispose started"]
+markers = [b"dsh-test: never-dispose ready", b"press Ctrl+C again to confirm", b"dsh-test: never-dispose started"]
 output = bytearray()
 marker_index = 0
 deadline = time.monotonic() + float(timeout_seconds)
@@ -122,7 +122,7 @@ async function runHeadlessPtySmoke(): Promise<string> {
 }
 
 describe.skipIf(process.platform === 'win32')('headless process shutdown (real Loader tree in a PTY)', () => {
-  it('lets a second Ctrl+C force exit while the first signal is draining', async () => {
+  it('confirms the first Ctrl+C, drains on the second, and forces on the third', async () => {
     const output = await runHeadlessPtySmoke()
     expect(output).not.toContain('dsh: observing at ')
     expect(output).toContain('dsh-test: never-dispose ready')
