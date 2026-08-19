@@ -1,34 +1,30 @@
 /**
  * ModelSelect: the composer's named model seat (`conversation.input.model`).
- * Two-level selection per figma 496:26454's MenuDropdown: the root menu is
- * the Model / Effort row pair (label + current value + a right chevron),
- * each drilling into its own list — the provider-grouped model list over
- * the shared directory, and the effort levels. The trigger (313:14108's
- * ToggleButton) shows both: model name + effort in the caption tone.
- * Data and submission ride the SAME per-session ModelDirectory as the
- * /model popup; exact-model reasoning metadata and the selected effort come
- * from the Host rather than a client-owned vocabulary. A rejected selection
- * announces through the shared transient Toast anchored to the composer
- * card; the in-menu strip with Retry remains the catalog-load surface.
+ * The trigger opens a single-level, provider-grouped model list over the
+ * shared directory. Thinking intensity is a separate always-visible slider
+ * beside the trigger — one horizontal track with a discrete stop per
+ * adapter-owned effort level, so changing the effort is a single drag/click
+ * instead of a second drill-in menu. The slider shows only when the current
+ * model exposes reasoning effort levels; its current value (and the model
+ * name) come from the Host rather than a client-owned vocabulary. A rejected
+ * selection announces through the shared transient Toast anchored to the
+ * composer card; the in-menu strip with Retry remains the catalog-load surface.
  */
 import {
   useEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
-  type KeyboardEvent, type FocusEvent,
+  type KeyboardEvent, type FocusEvent, type PointerEvent,
 } from 'react'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
+  IconCheckOutline16, IconChevronDownOutline14,
   IconWarningOutline16, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 
-/** Which pane the dropdown shows: the two-row root or one drilled-in list. */
-type Pane = 'root' | 'model' | 'effort'
-
-/** One dynamic effort row; undefined means preserve the provider default. */
+/** One dynamic effort choice; undefined effort means preserve the provider default. */
 interface EffortChoice {
   key: string
   effort: string | undefined
@@ -37,10 +33,10 @@ interface EffortChoice {
 }
 
 /**
- * Render the composer model seat.
+ * Render the composer model seat: the model trigger plus the always-visible
+ * thinking-intensity slider, and, while open, the model list menu.
  * @param props - owner share (locked) + injected face (shared directory
  * store/verbs) + the standard locale seat.
- * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
   { locked, available, directory, load, select, t }:
@@ -51,16 +47,16 @@ export function ModelSelect(
     () => directory.getSnapshot(),
   )
   const [open, setOpen] = useState(false)
-  const [pane, setPane] = useState<Pane>('root')
-  // The in-menu error strip serves catalog loads (its Retry re-runs the
-  // load); a rejected SELECTION announces through the transient toast
-  // instead, so the strip renders only while the latest failure-capable
-  // action was a load.
+  // Preview stop while dragging (null when idle); the committed value derives
+  // from the directory's reported effort below.
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const draggingRef = useRef(false)
   const lastActionRef = useRef<'load' | 'select'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const sliderTrackRef = useRef<HTMLDivElement | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
 
@@ -82,11 +78,6 @@ export function ModelSelect(
   const currentChoice = choices[selectedIndex]
   const reasoning = currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
-  const effortLabel = reasoning === undefined
-    ? undefined
-    : effectiveEffort === undefined
-      ? t('effort.providerDefault')
-      : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
   const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
     ? []
     : [
@@ -100,6 +91,9 @@ export function ModelSelect(
         ...effort.description === undefined ? {} : { description: effort.description },
       })),
     ], [reasoning, t])
+  const activeIndex = Math.max(0, effortChoices.findIndex(c => c.effort === effectiveEffort))
+  const thumbIndex = dragIndex ?? activeIndex
+  const thumbChoice = effortChoices[thumbIndex]
   const busy = state.status === 'selecting'
 
   const reload = (): void => {
@@ -127,14 +121,12 @@ export function ModelSelect(
   if (!available) return null
 
   const show = (): void => {
-    setPane('root')
     setOpen(true)
     reload()
   }
 
   const close = (restoreFocus = false): void => {
     setOpen(false)
-    setPane('root')
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
@@ -149,9 +141,7 @@ export function ModelSelect(
   const onRootKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && open) {
       event.preventDefault()
-      // Escape backs out of a drilled pane first, then closes.
-      if (pane !== 'root') setPane('root')
-      else close(true)
+      close(true)
       return
     }
     if (!open) return
@@ -187,34 +177,82 @@ export function ModelSelect(
     void select(selection).then(settleSelection)
   }
 
-  const chooseEffort = (effort: string | undefined): void => {
-    if (state.current === null) return
-    if (effectiveEffort === effort) {
-      close(true)
-      return
-    }
+  // Effort selection keeps the menu open (the slider is outside it) and only
+  // announces a rejection; success is reflected by the Host-reported current.
+  const selectEffort = (effort: string | undefined): void => {
+    if (state.current === null || effectiveEffort === effort) return
     const selection: ModelSelection = {
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
     lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    void select(selection).then((accepted) => {
+      if (accepted) return
+      const message = directory.getSnapshot().error
+      if (message !== null) {
+        toastSeq.current += 1
+        setToast({ seq: toastSeq.current, text: t('error.action', { message }) })
+      }
+    })
+  }
+
+  const sliderIndexFromEvent = (event: PointerEvent<HTMLDivElement>): number => {
+    const rect = sliderTrackRef.current?.getBoundingClientRect()
+    const count = effortChoices.length
+    if (rect === undefined || count < 2) return 0
+    const ratio = (event.clientX - rect.left) / rect.width
+    return Math.max(0, Math.min(count - 1, Math.round(ratio * (count - 1))))
+  }
+
+  const onSliderPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+    if (locked || busy || effortChoices.length < 2) return
+    draggingRef.current = true
+    sliderTrackRef.current?.setPointerCapture?.(event.pointerId)
+    setDragIndex(sliderIndexFromEvent(event))
+  }
+
+  const onSliderPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!draggingRef.current) return
+    setDragIndex(sliderIndexFromEvent(event))
+  }
+
+  const onSliderPointerUp = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    const choice = effortChoices[sliderIndexFromEvent(event)]
+    setDragIndex(null)
+    if (choice !== undefined) selectEffort(choice.effort)
+  }
+
+  const onSliderPointerCancel = (): void => {
+    draggingRef.current = false
+    setDragIndex(null)
+  }
+
+  const onSliderKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    event.stopPropagation()
+    if (effortChoices.length < 2) return
+    const next = Math.max(0, Math.min(effortChoices.length - 1, activeIndex + (event.key === 'ArrowRight' ? 1 : -1)))
+    const choice = effortChoices[next]
+    if (choice !== undefined) selectEffort(choice.effort)
   }
 
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
-  const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
+  const triggerLabel = modelLabel
   const triggerAria = currentChoice === undefined
     ? t('trigger.selectAria')
-    : effortLabel === undefined
-      ? t('trigger.aria', { model: modelLabel })
-      : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
+    : t('trigger.aria', { model: modelLabel })
   itemRefs.current = []
   let itemIndex = 0
   const itemRef = () => {
     const at = itemIndex++
     return (node: HTMLButtonElement | null) => { itemRefs.current[at] = node }
   }
+
+  const stopRatio = (index: number): string => `${index * 100 / Math.max(1, effortChoices.length - 1)}%`
 
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onRootKeyDown} onBlur={onBlur}>
@@ -237,9 +275,45 @@ export function ModelSelect(
         }}
       >
         <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
+
+      {reasoning !== undefined && effortChoices.length > 0 && (
+        <div className={css.effortSlider}>
+          <div
+            ref={sliderTrackRef}
+            className={clsx(css.slider, dragIndex !== null && css.dragging)}
+            role="slider"
+            tabIndex={locked || effortChoices.length < 2 ? undefined : 0}
+            aria-label={t('menu.effort')}
+            aria-valuemin={0}
+            aria-valuemax={effortChoices.length - 1}
+            aria-valuenow={thumbIndex}
+            aria-valuetext={thumbChoice?.label}
+            title={thumbChoice?.label}
+            onPointerDown={onSliderPointerDown}
+            onPointerMove={onSliderPointerMove}
+            onPointerUp={onSliderPointerUp}
+            onPointerCancel={onSliderPointerCancel}
+            onKeyDown={onSliderKeyDown}
+          >
+            <div className={css.sliderTrack}>
+              <div className={css.sliderFill} style={{ width: stopRatio(thumbIndex) }} />
+            </div>
+            {effortChoices.map((choice, index) => (
+              <span
+                key={choice.key}
+                className={clsx(css.sliderStop, index <= thumbIndex && css.sliderStopReached)}
+                style={{ left: stopRatio(index) }}
+              />
+            ))}
+            <div className={css.sliderThumb} style={{ left: stopRatio(thumbIndex) }} />
+          </div>
+          {thumbChoice !== undefined && (
+            <span className={css.effortValue}>{thumbChoice.label}</span>
+          )}
+        </div>
+      )}
 
       {open && (
         <div
@@ -249,115 +323,59 @@ export function ModelSelect(
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
         >
-          {pane === 'root' && (
-            <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
-                <span className={css.cellLabel}>{t('menu.model')}</span>
-                <span className={css.cellValue}>{modelLabel}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
-              </button>
-              {reasoning !== undefined && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
-                  <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
-                </button>
-              )}
-            </>
+          {state.status === 'loading' && (
+            <div className={css.status}>{t('status.loading')}</div>
           )}
-
-          {pane === 'model' && (
-            <>
-              {state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
-              )}
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              )}
-              {state.failures.map(failure => (
-                <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              ))}
-              <div className={clsx(css.groups, 'scrollable')}>
-                {state.groups.map((group) => {
-                  const headingId = `${id}-${group.id}`
-                  return (
-                    <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>{group.name}</div>
-                      {group.models.map((model) => {
-                        const selected = state.current?.provider === group.id && state.current.model === model.id
-                        return (
-                          <button
-                            ref={itemRef()}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={selected}
-                            className={clsx(css.option, selected && css.selected)}
-                            key={model.id}
-                            title={model.name}
-                            disabled={busy}
-                            onClick={() => { choose({ provider: group.id, model: model.id }) }}
-                          >
-                            <span className={css.optionCopy}>
-                              <span className={css.modelName}>{model.name}</span>
-                              {model.description !== undefined && (
-                                <span className={css.description}>{model.description}</span>
-                              )}
-                            </span>
-                            <span className={css.check}>
-                              {selected ? <IconCheckOutline16 /> : null}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </section>
-                  )
-                })}
-              </div>
-              {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
-              )}
-            </>
+          {state.error !== null && lastActionRef.current === 'load' && (
+            <div className={css.error}>
+              <span>{t('error.action', { message: state.error })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+            </div>
           )}
-
-          {pane === 'effort' && (
-            <>
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
-                </div>
-              )}
-              {effortChoices.length === 0
-                ? <div className={css.empty}>{t('empty.efforts')}</div>
-                : effortChoices.map(level => (
-                  <button
-                    ref={itemRef()}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={effectiveEffort === level.effort}
-                    className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
-                    key={level.key}
-                    disabled={busy}
-                    onClick={() => { chooseEffort(level.effort) }}
-                  >
-                    <span className={css.optionCopy}>
-                      <span className={css.modelName}>{level.label}</span>
-                      {level.description !== undefined && (
-                        <span className={css.description}>{level.description}</span>
-                      )}
-                    </span>
-                    <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
-                    </span>
-                  </button>
-                ))}
-            </>
+          {state.failures.map(failure => (
+            <div className={css.warning} key={failure.id}>
+              <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+            </div>
+          ))}
+          <div className={clsx(css.groups, 'scrollable')}>
+            {state.groups.map((group) => {
+              const headingId = `${id}-${group.id}`
+              return (
+                <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
+                  <div className={css.groupTitle} id={headingId}>{group.name}</div>
+                  {group.models.map((model) => {
+                    const selected = state.current?.provider === group.id && state.current.model === model.id
+                    return (
+                      <button
+                        ref={itemRef()}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        className={clsx(css.option, selected && css.selected)}
+                        key={model.id}
+                        title={model.name}
+                        disabled={busy}
+                        onClick={() => { choose({ provider: group.id, model: model.id }) }}
+                      >
+                        <span className={css.optionCopy}>
+                          <span className={css.modelName}>{model.name}</span>
+                          {model.description !== undefined && (
+                            <span className={css.description}>{model.description}</span>
+                          )}
+                        </span>
+                        <span className={css.check}>
+                          {selected ? <IconCheckOutline16 /> : null}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </section>
+              )
+            })}
+          </div>
+          {state.status === 'ready' && choices.length === 0 && (
+            <div className={css.empty}>{t('empty.models')}</div>
           )}
         </div>
       )}
