@@ -37,6 +37,7 @@ const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', im
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
+import { createExitConfirmation } from './exit-confirmation.ts'
 
 const NAME = 'dsh'
 
@@ -213,13 +214,21 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     signalShutdown.abort()
     shutdown.interrupt(code)
   }
+  // A stray Ctrl+C in an interactive terminal must not tear down a long-lived
+  // surface (and its in-flight agent sessions): the first SIGINT arms a short
+  // confirmation window, and only a second SIGINT within it begins teardown.
+  // SIGTERM is a supervisor's ordinary stop request and bypasses confirmation.
+  const confirmExit = createExitConfirmation({
+    write: text => { process.stderr.write(text) },
+    isInteractive: () => process.stdout.isTTY === true,
+  })
   // Signals own teardown throughout the startup window, not only after boot()
   // settles: an inserted provider can publish before sibling rows finish mounting.
   // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
   // surface — the launcher does not know whether the app considered its work
   // complete; SIGINT is a user interrupt and reports 130.
-  process.on('SIGTERM', () => { interrupt(0) })
-  process.on('SIGINT', () => { interrupt(130) })
+  process.on('SIGTERM', () => { confirmExit.dispose(); interrupt(0) })
+  process.on('SIGINT', () => { if (confirmExit.onInterrupt()) interrupt(130) })
   installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })
