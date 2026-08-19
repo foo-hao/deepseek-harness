@@ -753,6 +753,7 @@ export function WorkspaceBrowser({
   startSession,
   open,
   renameSession,
+  suggestSessionTitles,
   forkSession,
   moveSessionToProject,
   renameWorkspace,
@@ -908,12 +909,30 @@ export function WorkspaceBrowser({
   const [sessionRenameDraft, setSessionRenameDraft] = useState('')
   const [sessionRenaming, setSessionRenaming] = useState(false)
   const [sessionRenameError, setSessionRenameError] = useState<string | null>(null)
+  const [sessionSuggestions, setSessionSuggestions] = useState<string[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsFailed, setSuggestionsFailed] = useState(false)
   const sessionRenameTrimmed = sessionRenameDraft.trim()
   const sessionRenameBlocked = sessionRenaming || sessionRenameTrimmed === '' || sessionRenameTarget === null
   const closeSessionRename = () => {
     if (sessionRenaming) return
     setSessionRenameTarget(null)
     setSessionRenameError(null)
+    setSessionSuggestions([])
+    setSuggestionsFailed(false)
+  }
+  const loadSessionSuggestions = (sessionId: SessionNode['id']) => {
+    setSessionSuggestions([])
+    setSuggestionsFailed(false)
+    setSuggestionsLoading(true)
+    suggestSessionTitles(sessionId).then((titles) => {
+      setSessionSuggestions(titles)
+      setSuggestionsLoading(false)
+    }).catch(() => {
+      // Suggestions are advisory: a failure must not block manual rename.
+      setSuggestionsFailed(true)
+      setSuggestionsLoading(false)
+    })
   }
   const confirmSessionRename = () => {
     if (sessionRenameBlocked) return
@@ -931,6 +950,7 @@ export function WorkspaceBrowser({
     setSessionRenameTarget({ sessionId, currentTitle })
     setSessionRenameDraft(currentTitle)
     setSessionRenameError(null)
+    loadSessionSuggestions(sessionId)
   }
 
   // Archive is dialog-free: not destructive (the log and the accounting slot
@@ -1252,6 +1272,37 @@ export function WorkspaceBrowser({
             }
           }}
         />
+        <div className={css.suggestBlock}>
+          {suggestionsLoading && <span className={css.suggestPending}>{t('suggest.loading')}</span>}
+          {!suggestionsLoading && suggestionsFailed && (
+            <span className={css.suggestFailed}>
+              {t('suggest.failed')}
+              <button
+                type="button"
+                className={css.suggestRetry}
+                onClick={() => { if (sessionRenameTarget !== null) loadSessionSuggestions(sessionRenameTarget.sessionId) }}
+              >
+                {t('suggest.retry')}
+              </button>
+            </span>
+          )}
+          {!suggestionsLoading && !suggestionsFailed && sessionSuggestions.length > 0 && (
+            <div className={css.suggestList} aria-label={t('suggest.label')}>
+              {sessionSuggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className={css.suggestChip}
+                  disabled={sessionRenaming}
+                  aria-label={t('suggest.aria', { title: suggestion })}
+                  onClick={() => { setSessionRenameDraft(suggestion); setSessionRenameError(null) }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {sessionRenameError !== null && <div className={css.renameError} role="alert">{sessionRenameError}</div>}
       </Modal>
       <Modal

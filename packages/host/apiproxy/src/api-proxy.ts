@@ -2300,6 +2300,26 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       },
 
+      async suggestTitles(request, signal) {
+        const { sessionId } = request.payload
+        const found = await agentFor(sessionId)
+        if ('error' in found) return err(request, found.error)
+        const titles = ctx.get('sessionTitle')
+        if (titles === undefined) {
+          return err(request, { code: 'internal', message: 'title suggestions are unavailable: this deployment mounts no session-title service', details: {} })
+        }
+        try {
+          const suggestions = await titles.suggest(found.agent.session, signal)
+          return ok(request, { titles: [...suggestions] })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `failed to suggest titles for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+      },
+
       async fork(request) {
         const { sessionId, atSeq, cwd } = request.payload
         let source: SessionReadState

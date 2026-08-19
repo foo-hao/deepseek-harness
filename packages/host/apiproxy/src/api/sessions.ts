@@ -313,6 +313,16 @@ export interface SessionsApi {
   Promise<RpcResponse<{ title: string; seq: number }>>
 
   /**
+   * Generates on-demand candidate titles from the whole session — a
+   * read-only rename-suggestion surface that commits nothing and never pins
+   * the title. Returns normalized, deduplicated titles in model order; an
+   * empty list means no provider is mounted or no eligible text exists.
+   * Session-backed subagents reject with `agent-busy`.
+   */
+  suggestTitles(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal):
+  Promise<RpcResponse<{ titles: string[] }>>
+
+  /**
    * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer.
    * A prompt whose content is exactly one text block starting with '/' is a slash command: the host
    * executes it through the command registry (mode-agnostic) and it is never sent to the model. A

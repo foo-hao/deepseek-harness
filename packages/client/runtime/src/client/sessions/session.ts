@@ -349,6 +349,21 @@ export class Session implements SessionFace {
   }
 
   /**
+   * Suggest titles: contract session.suggestTitles 1:1 — a read-only rename
+   * suggestion read that commits nothing and never mutates the title
+   * projection (only an explicit rename settles it).
+   * @returns the candidate titles, or the business/transport error.
+   */
+  async suggestTitles(): Promise<RpcResult<{ titles: string[] }>> {
+    try {
+      const { result } = await this.api.sessions.suggestTitles({ sessionId: this.sessionId })
+      return result
+    } catch (error) {
+      return transportError(error)
+    }
+  }
+
+  /**
    * Execute one slash-command line against this session's agent — pure
    * admission semantics (the host executor durably logs the lifecycle;
    * outcomes render as flow nodes, never as a response echo).

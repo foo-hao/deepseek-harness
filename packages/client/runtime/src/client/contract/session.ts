@@ -68,6 +68,12 @@ export interface ISession {
    */
   rename(title: string): Promise<RpcResult<{ title: string; seq: number }>>
   /**
+   * Generate on-demand candidate titles from the whole session — a read-only
+   * rename-suggestion surface that commits nothing and never pins the title.
+   * @returns normalized, deduplicated candidate titles, or the business error.
+   */
+  suggestTitles(): Promise<RpcResult<{ titles: string[] }>>
+  /**
    * Extend the history window backwards (older messages pagination).
    * @returns completion; failures land in snapshot.openState/loadingOlder.
    */
