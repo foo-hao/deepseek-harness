@@ -1,6 +1,6 @@
 // Web e2e scenario: a hand-declared model's `reasoningEfforts` reaches the
-// composer's effort pane — the levels a settings profile declares are exactly
-// what the picker offers, and picking one records it with the Agent default.
+// composer's effort slider — the levels a settings profile declares are exactly
+// what the slider offers, and picking one records it with the Agent default.
 // Zero model calls: declaring, describing, and switching are settings/llm
 // traffic only, so there is no fixture and a stray stream would fail loud.
 import { readFile } from 'node:fs/promises'
@@ -61,31 +61,42 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await scaffold?.close()
   })
 
-  it('offers exactly the declared levels and records the picked one', async () => {
+  it('offers exactly the declared levels on the effort slider and records the picked one', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-declared-reasoning'))
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
-    await page.getByRole('menuitem', { name: /推理等级/ }).click()
 
-    // Declared levels, nothing else: the provider-default entry (the route
+    // The trigger now opens a single-level model list; the effort levels live
+    // on the always-visible slider beside it. The slider's golden pins its
+    // accessible surface; the menu membership stays a programmatic assertion
+    // because its catalog content is scaffold-assembled.
+    const menu = page.locator('[role="menu"]')
+    await menu.waitFor({ timeout: 10_000 })
+    await expect.poll(() => menu.getByRole('menuitemradio', { name: 'Acme Think' }).count(), { timeout: 10_000 }).toBe(1)
+    const slider = page.getByRole('slider', { name: '推理等级' })
+    await expect.poll(() => slider.getAttribute('aria-valuemax'), { timeout: 10_000 }).toBe('3')
+    await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 10_000 }).toBe('Default')
+    const sliderSnapshot = await captureStableAria(page, '[role="slider"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(UI_EXPECTED, sliderSnapshot, MODE)
+
+    // The declared levels, nothing else: the provider-default entry (the route
     // configures no `reasoning`), then Off/High/Max — minimal, low, medium,
-    // and xhigh were not declared and must not be offered.
-    const levels = page.getByRole('menuitemradio')
-    await expect.poll(async () => levels.allTextContents(), { timeout: 10_000 })
-      .toEqual(['Default', 'Off', 'High', 'Max'])
-    const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
-
-    // Picking a level is the same gesture that saves the default selection, so
-    // the effort lands in the Agent default Settings section beside provider/model.
-    await page.getByRole('menuitemradio', { name: 'High' }).click()
+    // and xhigh were not declared and must not be offered. Stepping to the
+    // declared 'High' is the same gesture that saves the default selection, so
+    // the effort lands in the Agent default Settings section beside
+    // provider/model.
+    await slider.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 10_000 }).toBe('Off')
+    await page.keyboard.press('ArrowRight')
     await expect.poll(
       async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'),
       { timeout: 10_000 },
     ).toContain('reasoningEffort: high')
-    await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 })
-      .toBe('选择模型，当前 Acme Think，推理等级 High')
+    await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 10_000 }).toBe('High')
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 10_000 }).toBe('Max')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
