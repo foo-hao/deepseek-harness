@@ -91,7 +91,15 @@ export function apply(ctx: ClientContext): void {
     },
     moveSessionToProject: (sessionId, targetCwd) => {
       ctx.sessions.fork({ sessionId, cwd: targetCwd, increaseTitle: true })
-        .then((childId) => { ctx.sessions.open(childId) })
+        .then((childId) => {
+          ctx.sessions.open(childId)
+          // True-relocate semantics: once the child lands in the target
+          // project, hide the original from its project (log retained,
+          // recoverable through unarchive).
+          ctx.workspaces.archiveSession(sessionId).catch((reason: unknown) => {
+            console.warn('session archive after relocation rejected:', reason)
+          })
+        })
         .catch(() => {
           // Relocate fork failure keeps the current selection.
         })
