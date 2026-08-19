@@ -127,6 +127,16 @@ export const sessionRenameValueSchema = z.object({
   seq: z.number().int().nonnegative(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.rename'>>>
 
+/** session.suggestTitles request payload. */
+export const sessionSuggestTitlesRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'session.suggestTitles'>>>
+
+/** session.suggestTitles response value (normalized, deduplicated candidate titles). */
+export const sessionSuggestTitlesValueSchema = z.object({
+  titles: z.array(z.string().min(1)),
+}) satisfies z.ZodType<Wire<ResponseValue<'session.suggestTitles'>>>
+
 /** session.fork request payload (atSeq anchors the completed-turn cut). */
 export const sessionForkRequestSchema = z.object({
   sessionId: sessionIdSchema,

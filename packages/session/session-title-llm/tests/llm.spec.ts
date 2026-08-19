@@ -8,8 +8,10 @@ import type { SessionTitleProviderRequest } from '@deepseek-ai/dsh-session-title
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
   generateSessionTitleWithLlm,
+  generateSessionTitleSuggestionsWithLlm,
   resolveSessionTitleLlmConfig,
   SESSION_TITLE_TIMEOUT_CODE,
+  DEFAULT_SUGGEST_MAX_OUTPUT_TOKENS,
 } from '@deepseek-ai/dsh-session-title-llm'
 import type { SessionTitleLlmConfig } from '@deepseek-ai/dsh-session-title-llm'
 
@@ -363,3 +365,60 @@ describe('generateSessionTitleWithLlm', () => {
     }
   })
 })
+
+describe('generateSessionTitleSuggestionsWithLlm', () => {
+  it('frames all messages once, parses one title per line, drops empties, and caps at the count', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(LlmRuntime)
+    const providerRequest = request(ctx)
+    const script: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'Alpha title\nBeta title\nGamma title\nDelta title' },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const adapter = new RecordingAdapter(script)
+    ctx.llm.registerAdapter(['current-route'], adapter)
+
+    const results = await generateSessionTitleSuggestionsWithLlm(
+      ctx,
+      resolveSessionTitleLlmConfig({ ...CONFIG, suggestCount: 2 }),
+      providerRequest,
+      providerRequest.messages,
+      TITLE_PROVIDER,
+    )
+
+    expect(results.map(result => result.title)).toEqual(['Alpha title', 'Beta title'])
+    expect(results.map(result => result.model)).toEqual([
+      { provider: 'current-route', model: 'current-model' },
+      { provider: 'current-route', model: 'current-model' },
+    ])
+    expect(adapter.requests).toHaveLength(1)
+    expect(adapter.requests[0]!.maxTokens).toBe(DEFAULT_SUGGEST_MAX_OUTPUT_TOKENS)
+    expect(adapter.requests[0]!.system).toContain('2 title(s)')
+  })
+
+  it('returns an empty list when the model produces only whitespace', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(LlmRuntime)
+    const providerRequest = request(ctx)
+    const script: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: '   \n\n  ' },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    ctx.llm.registerAdapter(['current-route'], new RecordingAdapter(script))
+
+    const results = await generateSessionTitleSuggestionsWithLlm(
+      ctx,
+      resolveSessionTitleLlmConfig(CONFIG),
+      providerRequest,
+      providerRequest.messages,
+      TITLE_PROVIDER,
+    )
+
+    expect(results).toEqual([])
+  })
+})
+

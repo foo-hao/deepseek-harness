@@ -110,6 +110,8 @@ export type WorkspaceBrowserInjected = DirectoryPickingInjected & {
   searchResultLimit: number
   /** Rename a Session (explicit user title; resolves on host acceptance). */
   renameSession: (sessionId: SessionId, title: string) => Promise<void>
+  /** Generate on-demand candidate titles from the whole session (a read-only rename-suggestion read). */
+  suggestSessionTitles: (sessionId: SessionId) => Promise<string[]>
   /** Fork a Session at its last completed turn and open the child. */
   forkSession: (sessionId: SessionId) => void
   /** Rename a Host Workspace (rejects on name conflict; resolves on durability). */

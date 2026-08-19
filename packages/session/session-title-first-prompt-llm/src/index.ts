@@ -23,6 +23,8 @@ export const Config: z<Config> = z.object({
   timeoutMs: SessionTitleLlmConfigFields.timeoutMs,
   provider: SessionTitleLlmConfigFields.provider,
   model: SessionTitleLlmConfigFields.model,
+  suggestCount: SessionTitleLlmConfigFields.suggestCount,
+  suggestMaxOutputTokens: SessionTitleLlmConfigFields.suggestMaxOutputTokens,
 })
 /* jscpd:ignore-end */
 

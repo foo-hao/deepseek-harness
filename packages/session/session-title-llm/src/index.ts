@@ -63,10 +63,22 @@ export interface SessionTitleLlmConfig {
   readonly provider?: string
   /** Optional explicit model id; must be paired with `provider`. */
   readonly model?: string
+  /** Number of candidate titles the suggest path requests. Defaults to {@link DEFAULT_SUGGEST_COUNT}. */
+  readonly suggestCount?: number
+  /** Auxiliary output-token cap for the suggestions request. Defaults to {@link DEFAULT_SUGGEST_MAX_OUTPUT_TOKENS}. */
+  readonly suggestMaxOutputTokens?: number
 }
 
-/** Validated immutable model-provider policy. */
-export interface ResolvedSessionTitleLlmConfig extends SessionTitleLlmConfig {}
+/** Default number of candidate titles requested by the suggest path. */
+export const DEFAULT_SUGGEST_COUNT = 1
+/** Default output-token cap for the suggestions request. */
+export const DEFAULT_SUGGEST_MAX_OUTPUT_TOKENS = 256
+
+/** Validated immutable model-provider policy with resolved suggest bounds. */
+export interface ResolvedSessionTitleLlmConfig extends SessionTitleLlmConfig {
+  readonly suggestCount: number
+  readonly suggestMaxOutputTokens: number
+}
 
 /** Shared Loader field schemas with no library defaults. */
 export const SessionTitleLlmConfigFields = {
@@ -77,6 +89,8 @@ export const SessionTitleLlmConfigFields = {
   timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).required(),
   provider: z.string(),
   model: z.string(),
+  suggestCount: z.number().step(1).min(1),
+  suggestMaxOutputTokens: z.number().step(1).min(1),
 }
 
 /** Shared Loader schema with no library defaults. */
@@ -91,6 +105,8 @@ const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'timeoutMs',
   'provider',
   'model',
+  'suggestCount',
+  'suggestMaxOutputTokens',
 ])
 
 /** Validate one positive integer limit. */
@@ -124,6 +140,8 @@ export function resolveSessionTitleLlmConfig(
   if (value.timeoutMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`session-title-llm: timeoutMs must not exceed ${MAX_TIMER_DELAY_MS}`)
   }
+  if (value.suggestCount !== undefined) assertPositiveInteger('suggestCount', value.suggestCount)
+  if (value.suggestMaxOutputTokens !== undefined) assertPositiveInteger('suggestMaxOutputTokens', value.suggestMaxOutputTokens)
   const hasProvider = value.provider !== undefined
   const hasModel = value.model !== undefined
   if (hasProvider !== hasModel) {
@@ -134,7 +152,11 @@ export function resolveSessionTitleLlmConfig(
       || typeof value.model !== 'string' || value.model.length === 0)) {
     throw new Error('session-title-llm: provider and model overrides must be non-empty strings')
   }
-  return deepFreeze({ ...value })
+  return deepFreeze({
+    ...value,
+    suggestCount: value.suggestCount ?? DEFAULT_SUGGEST_COUNT,
+    suggestMaxOutputTokens: value.suggestMaxOutputTokens ?? DEFAULT_SUGGEST_MAX_OUTPUT_TOKENS,
+  })
 }
 
 /** Select the provider-owned message subset from one fixed service revision. */
@@ -165,6 +187,11 @@ export function registerSessionTitleLlmProvider(
     async generate(request) {
       return generateSessionTitleWithLlm(ctx, resolved, request, selectMessages(request.messages), titleProvider)
     },
+    async suggest(request) {
+      // Suggestions always summarize the whole session, regardless of the
+      // provider's automatic cadence (first-prompt vs all-prompts).
+      return generateSessionTitleSuggestionsWithLlm(ctx, resolved, request, request.messages, titleProvider)
+    },
   })
 }
 
@@ -189,6 +216,17 @@ function systemPrompt(config: ResolvedSessionTitleLlmConfig): string {
     'Return only the title on one line, **in plain text of natural language**, with no quotes, prefix, explanation, Markdown, XML, or terminal control codes. No code is allowed.',
     'Use the language of the messages.',
     `Aim for about ${config.targetWords} words in non-CJK languages or ${config.targetCjkCharacters} CJK characters.`,
+  ].join('\n')
+}
+
+/** Stable language-aware system instruction for the suggestions request. */
+function suggestSystemPrompt(config: ResolvedSessionTitleLlmConfig): string {
+  return [
+    'Propose a concise title for an AI coding-assistant session from the supplied human messages.',
+    `Return exactly ${config.suggestCount} title(s), one per line.`,
+    'Each title is plain text of natural language with no quotes, prefix, numbering, explanation, Markdown, XML, or terminal control codes. No code is allowed.',
+    'Use the language of the messages.',
+    `Aim for about ${config.targetWords} words in non-CJK languages or ${config.targetCjkCharacters} CJK characters per title.`,
   ].join('\n')
 }
 
@@ -292,3 +330,89 @@ export async function generateSessionTitleWithLlm(
     model: route,
   }
 }
+
+/** Split model output into candidate title lines (one title per line). */
+function parseSuggestedTitles(text: string): string[] {
+  return text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '')
+}
+
+/**
+ * Generate several candidate titles through the shared auxiliary LLM call.
+ * @param ctx - context exposing the registered LLM service.
+ * @param config - validated model-provider policy with resolved suggest bounds.
+ * @param request - service-owned session, route, message snapshot, and cancellation.
+ * @param selectedMessages - exact provider-selected subset to frame and attribute (all messages for a whole-session summary).
+ * @param titleProvider - registered title-provider identity recorded with the request.
+ * @returns normalized non-empty candidate titles in model order, capped at the configured count.
+ */
+export async function generateSessionTitleSuggestionsWithLlm(
+  ctx: Context,
+  config: ResolvedSessionTitleLlmConfig,
+  request: SessionTitleProviderRequest,
+  selectedMessages: readonly SessionTitleUserMessage[],
+  titleProvider: SessionTitleProviderId,
+): Promise<readonly SessionTitleProviderResult[]> {
+  request.signal.throwIfAborted()
+  if (selectedMessages.length === 0) {
+    throw new Error('session-title-llm: at least one source message is required')
+  }
+  const framedInput = frameMessages(selectedMessages)
+  const inputBytes = Buffer.byteLength(framedInput, 'utf8')
+  if (inputBytes > config.maxInputBytes) {
+    throw new Error(`session-title-llm: input is ${inputBytes} bytes, exceeding maxInputBytes ${config.maxInputBytes}`)
+  }
+  const route = resolveRoute(config, request)
+  const messages: Message[] = [createUserMessage({
+    content: [{ type: 'text', text: framedInput }],
+    source: { kind: 'plugin', plugin: 'dsh-session-title-llm' },
+  })]
+  const system = suggestSystemPrompt(config)
+  using callDeadline = deadline(request.signal, config.timeoutMs, SESSION_TITLE_TIMEOUT_CODE)
+  const options: GenerateOptions = deepFreeze({
+    provider: route.provider,
+    model: route.model,
+    messages,
+    system,
+    maxTokens: config.suggestMaxOutputTokens,
+    sessionId: request.session.id,
+    purpose: 'session-title',
+    signal: callDeadline.signal,
+  })
+  request.session.append('session/title-llm-request', {
+    titleProvider,
+    messageSeqs: selectedMessages.map(message => message.seq),
+    route,
+    system,
+    messages,
+    maxTokens: config.suggestMaxOutputTokens,
+  })
+  callDeadline.signal.throwIfAborted()
+  const assembler = new BlockAssembler()
+  for await (const chunk of ctx.llm.stream(options)) {
+    callDeadline.signal.throwIfAborted()
+    assembler.push(chunk)
+  }
+  callDeadline.signal.throwIfAborted()
+  const terminalError = finishError(assembler.finish)
+  if (terminalError !== undefined) throw terminalError
+  const blocks = assembler.blocks()
+  if (blocks.some(block => block.type === 'tool-call')) {
+    throw new Error('session-title-llm: title output must contain text only')
+  }
+  const text = blocks
+    .filter((block): block is Extract<(typeof blocks)[number], { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join(' ')
+  const results: SessionTitleProviderResult[] = []
+  for (const candidate of parseSuggestedTitles(text)) {
+    const title = normalizeSessionTitle(candidate, Number.MAX_SAFE_INTEGER)
+    if (title.length === 0) continue
+    results.push({ title, messageSeqs: selectedMessages.map(message => message.seq), model: route })
+    if (results.length >= config.suggestCount) break
+  }
+  return Object.freeze(results)
+}
+

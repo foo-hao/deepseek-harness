@@ -156,6 +156,14 @@ export interface SessionTitleProvider {
    * @returns proposed title plus exact input seqs and the optional provider/model route used to generate it.
    */
   generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>
+  /**
+   * Produce several candidate titles from the whole session (an on-demand
+   * rename-suggestion read). Optional: a provider without this method falls
+   * back to the single-title 'generate' as a one-element result.
+   * @param request - full-session message snapshot, current route, session, and cancellation.
+   * @returns candidate titles plus exact input seqs and the optional provider/model route for each.
+   */
+  suggest?(request: SessionTitleProviderRequest): Promise<readonly SessionTitleProviderResult[]>
 }
 
 /**
@@ -423,6 +431,47 @@ export class SessionTitleService extends Service {
     const config = session.requestHeader()?.config
     const route = config === undefined ? undefined : { provider: config.provider, model: config.model }
     return this.startProvider(session, work, route)
+  }
+
+  /**
+   * Generate on-demand candidate titles from the whole session without
+   * committing any of them: a read-only rename-suggestion surface that never
+   * appends a `session/title` event, never pins the title, and never disturbs
+   * the automatic generation state machine. Falls back to the provider's
+   * single-title `generate` when it implements no `suggest`.
+   * @param session - exact live session to summarize.
+   * @param signal - optional caller cancellation.
+   * @returns normalized, deduplicated, ordered candidate titles (empty when no eligible text or no provider exists).
+   */
+  async suggest(session: Session, signal?: AbortSignal): Promise<readonly string[]> {
+    signal?.throwIfAborted()
+    this.assertServiceActive()
+    if (this.ctx.sessions.get(session.id) !== session) {
+      throw new Error(`session "${session.id}" is not live in this store`)
+    }
+    const registration = this.registration
+    const messages = collectSessionTitleMessages(session.events)
+    if (registration === undefined || registration.closing || messages.length === 0) return []
+    const config = session.requestHeader()?.config
+    const route = config === undefined ? undefined : { provider: config.provider, model: config.model }
+    const request: SessionTitleProviderRequest = {
+      session,
+      messages,
+      ...route === undefined ? {} : { route },
+      signal: signal === undefined ? this.lifetime.signal : AbortSignal.any([signal, this.lifetime.signal]),
+    }
+    const output = registration.provider.suggest === undefined
+      ? [await registration.provider.generate(request)]
+      : await registration.provider.suggest(request)
+    const seen = new Set<string>()
+    const titles: string[] = []
+    for (const item of output) {
+      const accepted = this.validateResult(item, messages)
+      if (seen.has(accepted.title)) continue
+      seen.add(accepted.title)
+      titles.push(accepted.title)
+    }
+    return Object.freeze(titles)
   }
 
   /**
