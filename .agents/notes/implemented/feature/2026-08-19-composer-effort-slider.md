@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-08-19-composer-effort-slider.zh.md)
+
 ## Problem
 
 The composer's model seat put effort selection behind a second drill-in menu: opening the model trigger, then the effort row, then the level list took three gestures, and the committed level only surfaced as a caption suffix squeezed into the model trigger. The adapter-owned reasoning-effort levels were already the single source of truth on the session `ModelDirectory`; only the presentation made them slow to reach.
