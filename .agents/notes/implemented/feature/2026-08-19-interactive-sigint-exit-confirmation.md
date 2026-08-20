@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-08-19-interactive-sigint-exit-confirmation.zh.md)
+
 ## Problem
 
 A stray Ctrl+C in an interactive `dsh` terminal immediately began graceful teardown of a long-lived surface (`dsh web`) and its in-flight agent sessions. There was no way to recover from the accidental interrupt.
@@ -9,6 +11,12 @@ A stray Ctrl+C in an interactive `dsh` terminal immediately began graceful teard
 ## Decision
 
 The launcher gains a confirmation gate (`apps/cli/src/exit-confirmation.ts`) layered above the existing `ProcessShutdown` controller. In an interactive terminal (`process.stdout.isTTY`), the first SIGINT prints a prompt and arms a three-second window instead of draining; a second SIGINT inside the window proceeds (exit 130), and the window expiring cancels. SIGTERM always bypasses confirmation (exit 0), and non-TTY processes keep the single-signal behavior. The existing drain-then-force escalation inside `createProcessShutdown` is unchanged.
+
+## Alternatives considered
+
+- **Exit on the first SIGINT.** This keeps conventional one-signal behavior but leaves long-lived interactive sessions vulnerable to an accidental key press.
+- **Ask for typed confirmation.** A text prompt is more explicit, but it competes with terminal input, requires a line-reading state machine, and delays an operator who intends to stop immediately.
+- **Apply confirmation to SIGTERM and non-interactive processes.** A uniform gate would simplify the surface, but would weaken process-manager and automation shutdown semantics.
 
 ## Consequences
 
