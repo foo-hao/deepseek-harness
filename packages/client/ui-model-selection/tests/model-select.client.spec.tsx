@@ -50,19 +50,16 @@ afterEach(cleanup)
 // The slider maps a pointer x onto discrete stops via the track rect; jsdom
 // reports a zero rect, so the mapping test pins one that treats the track as
 // 100px wide (clientX 99 → last stop, clientX 1 → first stop).
-let rectSpy: ReturnType<typeof vi.spyOn> | null = null
-
 function mockTrackRect(): void {
-  rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
     .mockReturnValue({
       left: 0, top: 0, right: 100, bottom: 20, width: 100, height: 20, x: 0, y: 0,
       toJSON: () => ({}),
-    } as DOMRect)
+    })
 }
 
 afterEach(() => {
-  rectSpy?.mockRestore()
-  rectSpy = null
+  vi.restoreAllMocks()
 })
 
 describe('ModelSelect reasoning effort slider', () => {

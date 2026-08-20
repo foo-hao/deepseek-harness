@@ -208,7 +208,10 @@ export function ModelSelect(
   const onSliderPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (locked || busy || effortChoices.length < 2) return
     draggingRef.current = true
-    sliderTrackRef.current?.setPointerCapture?.(event.pointerId)
+    // Pointer capture is absent in a few DOM hosts (including jsdom), even
+    // though lib.dom declares it as required.
+    const captureTarget: Partial<Pick<HTMLDivElement, 'setPointerCapture'>> = event.currentTarget
+    captureTarget.setPointerCapture?.(event.pointerId)
     setDragIndex(sliderIndexFromEvent(event))
   }
 
