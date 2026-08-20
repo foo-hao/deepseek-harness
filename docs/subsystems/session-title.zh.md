@@ -142,6 +142,14 @@ interface SessionTitleProvider {
    * @returns proposed title plus exact input seqs and the optional provider/model route used to generate it.
    */
   generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>
+  /**
+   * Produce several candidate titles from the whole session (an on-demand
+   * rename-suggestion read). Optional: a provider without this method falls
+   * back to the single-title 'generate' as a one-element result.
+   * @param request - full-session message snapshot, current route, session, and cancellation.
+   * @returns candidate titles plus exact input seqs and the optional provider/model route for each.
+   */
+  suggest?(request: SessionTitleProviderRequest): Promise<readonly SessionTitleProviderResult[]>
 }
 ```
 
@@ -190,6 +198,18 @@ rename(session: Session, title: string): SessionTitleSnapshot
 async refresh(session: Session, signal?: AbortSignal): Promise<SessionTitleSnapshot | undefined>
 
 /**
+ * Generate on-demand candidate titles from the whole session without
+ * committing any of them: a read-only rename-suggestion surface that never
+ * appends a `session/title` event, never pins the title, and never disturbs
+ * the automatic generation state machine. Falls back to the provider's
+ * single-title `generate` when it implements no `suggest`.
+ * @param session - exact live session to summarize.
+ * @param signal - optional caller cancellation.
+ * @returns normalized, deduplicated, ordered candidate titles (empty when no eligible text or no provider exists).
+ */
+async suggest(session: Session, signal?: AbortSignal): Promise<readonly string[]>
+
+/**
  * Register the sole optional title provider. Disposal aborts its pending and
  * active work before another provider may register.
  * @param provider - provider identity, cadence, and generation function.
@@ -200,5 +220,5 @@ register(provider: SessionTitleProvider): () => Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/session/session-title/src/index.ts:261`](../../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:269`](../../packages/session/session-title/src/index.ts)
 <!-- END GENERATED cordis-surface -->

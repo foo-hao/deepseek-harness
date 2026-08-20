@@ -1382,6 +1382,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'latest accepted title, or `undefined` when no eligible text exists.',
       },
       {
+        signature: 'async suggest(session: Session, signal?: AbortSignal): Promise<readonly string[]>',
+        description: 'Generate on-demand candidate titles from the whole session without committing any of them: a read-only rename-suggestion surface that never appends a `session/title` event, never pins the title, and never disturbs the automatic generation state machine. Falls back to the provider\'s single-title `generate` when it implements no `suggest`.',
+        parameters: [{ name: 'session', description: 'exact live session to summarize.' }, { name: 'signal', description: 'optional caller cancellation.' }],
+        returns: 'normalized, deduplicated, ordered candidate titles (empty when no eligible text or no provider exists).',
+      },
+      {
         signature: 'register(provider: SessionTitleProvider): () => Promise<void>',
         description: 'Register the sole optional title provider. Disposal aborts its pending and active work before another provider may register.',
         parameters: [{ name: 'provider', description: 'provider identity, cadence, and generation function.' }],
@@ -3937,7 +3943,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionTitleProvider',
-    declaration: 'export interface SessionTitleProvider {\n    readonly id: SessionTitleProviderId;\n    readonly automatic: SessionTitleAutomaticMode;\n    generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>;\n}',
+    declaration: 'export interface SessionTitleProvider {\n    readonly id: SessionTitleProviderId;\n    readonly automatic: SessionTitleAutomaticMode;\n    generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>;\n    suggest?(request: SessionTitleProviderRequest): Promise<readonly SessionTitleProviderResult[]>;\n}',
   },
   {
     name: 'SessionTitleProviderId',
