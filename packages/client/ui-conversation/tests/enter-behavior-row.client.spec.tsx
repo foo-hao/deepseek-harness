@@ -46,6 +46,8 @@ function mount() {
     useWorkspaces: emptyWorkspaces(),
     useBusyEnter: bindSnapshotSelector(policy.busyEnter),
     setBusyEnter,
+    useEnterMode: bindSnapshotSelector(policy.enterMode),
+    setEnterMode: (mode) => { policy.setEnterMode(mode) },
     t: makeTranslate(en),
   }
   render(<EnterBehaviorRow {...props} />)
@@ -75,4 +77,17 @@ describe('EnterBehaviorRow', () => {
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('menuitem', { name: 'Steer' })).toBeNull()
   })
+})
+
+it('switches the idle preference independently and observes external changes', () => {
+  const { policy } = mount()
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Newline' }))
+  expect(policy.enterMode.getSnapshot()).toBe('newline')
+  expect(policy.busyEnter.getSnapshot()).toBe('queue')
+  expect(screen.getByRole('button', { name: 'Newline' })).toBeDefined()
+  act(() => { policy.setEnterMode('send') })
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  fireEvent.pointerDown(document.body)
+  expect(screen.queryByRole('menuitem', { name: 'Newline' })).toBeNull()
 })

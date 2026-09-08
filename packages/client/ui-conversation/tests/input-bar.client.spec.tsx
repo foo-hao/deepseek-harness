@@ -95,6 +95,7 @@ interface BenchOptions {
   attachments?: readonly ComposerAttachment[]
   addFiles?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
+  enterMode?: 'send' | 'newline'
   busyEnter?: 'queue' | 'steer'
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
 }
@@ -197,6 +198,7 @@ function bench(over?: BenchOptions) {
       return gesture === 'enter' ? preferred : preferred === 'queue' ? 'steer' : 'queue'
     },
     toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
+    useEnterMode: selector => selector(over?.enterMode ?? 'send'),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
@@ -1521,5 +1523,55 @@ describe('command launcher chrome and control seats', () => {
     cleanup()
     const live = bench({ running: true, permissions })
     expect((live.view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('idle Enter preference', () => {
+  it('inserts an actual editor line break and updates the draft without submitting', async () => {
+    const b = bench({ draft: 'hello', enterMode: 'newline' })
+    b.textarea.focus()
+    await act(async () => { fireEvent.keyDown(b.textarea, { key: 'Enter' }) })
+    expect(b.sink).not.toHaveBeenCalled()
+    expect(b.shell.snapshot.draft).toContain('\n')
+  })
+
+  it.each([{ ctrlKey: true }, { metaKey: true }])('sends accelerated idle input in newline mode: %o', (modifiers) => {
+    const b = bench({ draft: 'hello', enterMode: 'newline' })
+    fireEvent.keyDown(b.textarea, { key: 'Enter', ...modifiers })
+    expect(b.sink).toHaveBeenCalledWith('hello', [], 'queue', expect.any(AbortSignal))
+  })
+
+  it.each(['queue', 'steer'] as const)('preserves busy %s and its accelerated inverse', (busyEnter) => {
+    const b = bench({ draft: 'hello', enterMode: 'newline', running: true, busyEnter })
+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
+    expect(b.sink).toHaveBeenCalledWith('hello', [], busyEnter, expect.any(AbortSignal))
+    const c = bench({ draft: 'hello', enterMode: 'newline', running: true, busyEnter })
+    fireEvent.keyDown(c.textarea, { key: 'Enter', ctrlKey: true })
+    expect(c.sink).toHaveBeenCalledWith('hello', [], busyEnter === 'queue' ? 'steer' : 'queue', expect.any(AbortSignal))
+  })
+
+  it('preserves action text while showing the shortcut only for editable idle input', () => {
+    expect(bench({ enterMode: 'newline', placeholder: 'Custom action' }).placeholder).toContain('Custom action')
+    expect(bench({ enterMode: 'newline' }).placeholder).toContain('Enter 换行')
+    expect(bench({ enterMode: 'newline', running: true }).placeholder).not.toContain('Enter 换行')
+    const locked = bench({ enterMode: 'newline', disabled: true, draft: 'hello' })
+    expect(locked.placeholder).not.toContain('Enter 换行')
+    fireEvent.keyDown(locked.textarea, { key: 'Enter' })
+    expect(locked.sink).not.toHaveBeenCalled()
+  })
+
+  it('honors preference changes without remounting the editor', () => {
+    const b = bench({ draft: 'hello', enterMode: 'newline' })
+    b.view.rerender(<InputBar {...b.props} useEnterMode={selector => selector('send')} />)
+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
+    expect(b.sink).toHaveBeenCalledWith('hello', [], 'queue', expect.any(AbortSignal))
+  })
+
+  it('keeps IME candidate confirmation out of newline and submission', () => {
+    const b = bench({ draft: 'hello', enterMode: 'newline' })
+    fireEvent.compositionStart(b.textarea)
+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
+    expect(b.sink).not.toHaveBeenCalled()
+    expect(b.shell.snapshot.draft).toBe('hello')
   })
 })

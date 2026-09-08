@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
-import { createEditor } from 'lexical'
+import { COMMAND_PRIORITY_LOW, KEY_ENTER_COMMAND, createEditor } from 'lexical'
 import { registerPlainText } from '@lexical/plain-text'
 import { registerComposerKeymap } from '../src/client/input/editor/keymap.ts'
 
@@ -23,6 +23,7 @@ describe('keymap keydown routing', () => {
       arbitrate: () => 'pass',
       space: () => false,
       dismissPopup: () => {},
+      enterInsertsNewline: () => false,
       canSubmit: () => true,
       submit,
       intakeFiles: () => {},
@@ -49,6 +50,7 @@ describe('keymap keydown routing', () => {
       arbitrate,
       space: () => false,
       dismissPopup: () => {},
+      enterInsertsNewline: () => false,
       canSubmit: () => true,
       submit: () => {},
       intakeFiles: () => {},
@@ -62,4 +64,32 @@ describe('keymap keydown routing', () => {
     const passed = fireEvent.keyDown(root, { key: 'Tab', keyCode: 9 })
     expect(passed).toBe(true) // pass: the browser keeps native focus traversal
   })
+})
+
+it('arbitrates menu and IME before delegating an idle newline to the editor', () => {
+  const editor = createEditor({ namespace: 'idle-newline-routing', onError: (error) => { throw error } })
+  const submit = vi.fn()
+  const newline = vi.fn(() => false)
+  const enterInsertsNewline = vi.fn(() => true)
+  const arbitrate = vi.fn<() => 'pick-highlighted' | 'pass'>().mockReturnValueOnce('pick-highlighted').mockReturnValue('pass')
+  const releaseDefault = editor.registerCommand(KEY_ENTER_COMMAND, newline, COMMAND_PRIORITY_LOW)
+  const release = registerComposerKeymap(editor, {
+    arbitrate, space: () => false, dismissPopup: () => {}, canSubmit: () => true,
+    enterInsertsNewline, submit, intakeFiles: () => {}, pasteText: () => {},
+  })
+  try {
+    const picked = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    editor.dispatchCommand(KEY_ENTER_COMMAND, picked)
+    expect(picked.defaultPrevented).toBe(true)
+    expect(enterInsertsNewline).not.toHaveBeenCalled()
+    editor.dispatchCommand(KEY_ENTER_COMMAND, new KeyboardEvent('keydown', { key: 'Enter', isComposing: true }))
+    expect(enterInsertsNewline).not.toHaveBeenCalled()
+    expect(newline).not.toHaveBeenCalled()
+    editor.dispatchCommand(KEY_ENTER_COMMAND, null)
+    expect(newline).toHaveBeenCalledOnce()
+    expect(submit).not.toHaveBeenCalled()
+  } finally {
+    release()
+    releaseDefault()
+  }
 })

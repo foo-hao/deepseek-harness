@@ -50,6 +50,8 @@ Queued submission echoes show “Sending…” beside disabled edit, remove, and
 
 While a normal composer is running, its primary pointer action remains Stop when the draft is empty or input is unavailable. Actionable text or attachments switch the same seat to Queue Send; clearing or successfully submitting the draft restores Stop. The busy-Enter setting selects the Queue or Steer keyboard action for ordinary Sessions and continuable children. Their QueueDock rows share Edit, Remove, and Steer, and an empty draft shares the steer-all chord. One-shot children remain read-only. Plan mode and active goals do not change attachment intake. Continuable children keep separate Send and Stop actions but expose no paperclip, paste, or drop intake; if their parent is offline, Send and the composer gestures lock while QueueDock controls for the live inbox remain available ([decisions](../../../.agents/notes/archived/bug-fix/2026-08-20-running-draft-primary-send.md), [inbox controls](../../../.agents/notes/implemented/feature/2026-08-27-continuable-subagent-human-inbox-control.md)).
 
+The General settings expose separate idle and busy Enter preferences. Idle Enter defaults to Send; Newline lets plain Enter insert an editor line break and Cmd/Ctrl+Enter send. Shift+Enter inserts a line break. Busy Enter retains Queue/Steer selection and the accelerated inverse. Menu selection and IME candidate confirmation take precedence. The idle newline placeholder retains its action prompt and explains both shortcuts. Both preferences persist through the Host settings service.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 
