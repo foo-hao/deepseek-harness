@@ -468,7 +468,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it('persists the busy-state Enter behavior across reload and a distinct port', async () => {
+  it('persists the idle and busy Enter preferences across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-enter-behavior'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
@@ -476,9 +476,12 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '排队发送' }).click()
     await page.getByRole('menuitem', { name: '插话发送' }).click()
     await dialog.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: '发送', exact: true }).click()
+    await page.getByRole('menuitem', { name: '换行', exact: true }).click()
+    await dialog.getByRole('button', { name: '换行', exact: true }).waitFor()
     expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
-      .toMatch(/ui-conversation:\n\s+busyEnter: steer/)
+      .toMatch(/ui-conversation:\n\s+busyEnter: steer\n\s+enterMode: newline/)
     await page.keyboard.press('Escape')
 
     const warningStart = tripwire.warnings.length
@@ -488,6 +491,8 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const reloaded = page.getByRole('dialog', { name: '设置' })
     await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
+
+    await reloaded.getByRole('button', { name: '换行', exact: true }).waitFor()
 
     const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
@@ -500,6 +505,8 @@ describe('web e2e: settings modal and General preferences', () => {
       await secondPage.getByRole('dialog', { name: '设置' })
         .getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
       expect(await secondPage.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
+      await secondPage.getByRole('dialog', { name: '设置' })
+        .getByRole('button', { name: '换行', exact: true }).waitFor()
       expect(secondTripwire.pageErrors).toEqual([])
       expect(secondTripwire.warnings).toEqual([])
     } finally {
@@ -507,6 +514,8 @@ describe('web e2e: settings modal and General preferences', () => {
       await second.close()
     }
 
+    await reloaded.getByRole('button', { name: '换行', exact: true }).click()
+    await page.getByRole('menuitem', { name: '发送', exact: true }).click()
     await reloaded.getByRole('button', { name: '插话发送' }).click()
     await page.getByRole('menuitem', { name: '排队发送' }).click()
     await reloaded.getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })

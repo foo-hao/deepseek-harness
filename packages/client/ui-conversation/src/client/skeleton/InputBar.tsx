@@ -43,12 +43,13 @@ export type InputBarProps = ComposerBarProps
 export const InputBar = memo(function InputBar({
   useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments,
   retryFileUpload,
-  toggleCommandMenu, stop, command, t,
+  useEnterMode, toggleCommandMenu, stop, command, t,
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory,
 }: InputBarProps) {
+  const enterMode = useEnterMode(mode => mode)
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const busyEnter = useBusyEnter(s => s)
@@ -265,11 +266,11 @@ export const InputBar = memo(function InputBar({
   // The keymap handlers read live bar state through this ref so the editor
   // registration survives re-renders without re-arming per keystroke.
   const gate = useRef({
-    locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
+    locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter, enterMode,
     intakeFiles, uploadsPending, showToast, t,
   })
   gate.current = {
-    locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
+    locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter, enterMode,
     intakeFiles, uploadsPending, showToast, t,
   }
 
@@ -283,6 +284,10 @@ export const InputBar = memo(function InputBar({
       },
       dismissPopup: () => { keyboard.dismissPopup() },
       canSubmit: () => !gate.current.locked && !gate.current.machineBusy,
+      enterInsertsNewline: () => {
+        const g = gate.current
+        return !g.locked && !g.machineBusy && !g.running && g.enterMode === 'newline'
+      },
       submit: (accelerated) => {
         const g = gate.current
         // Empty-draft accelerated Enter acts on the queue instead of the
@@ -391,7 +396,7 @@ export const InputBar = memo(function InputBar({
     return translated !== hintKey ? translated : rawHint
   })()
 
-  const placeholderText = placeholder ?? (parentOffline
+  const actionPlaceholder = placeholder ?? (parentOffline
     ? t('placeholder.parentOffline')
     : disabled
       ? t('placeholder.unavailable')
@@ -401,6 +406,9 @@ export const InputBar = memo(function InputBar({
       : canSteerQueue
         ? t('placeholder.steerQueue')
         : planActive ? t('placeholder.plan') : t('placeholder.default'))
+  const placeholderText = editable && !running && enterMode === 'newline'
+    ? t('placeholder.newlineMode', { prompt: actionPlaceholder })
+    : actionPlaceholder
 
   return (
     <div className={clsx(css.root, variant === 'hero' && css.hero)}>

@@ -48,3 +48,7 @@
   - button "Queue":
     - text: Queue
     - img
+  - text: Enter behavior while idle Idle only; busy Enter follows the option above
+  - button "Send":
+    - text: Send
+    - img
