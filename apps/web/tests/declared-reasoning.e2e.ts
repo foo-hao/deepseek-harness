@@ -88,6 +88,39 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('adjusts effort from the slider while retaining keyboard focus', async () => {
+    const slider = page.getByRole('slider', { name: '推理等级', exact: true })
+    await slider.waitFor()
+    await slider.focus()
+    await slider.press('End')
+    await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('Max')
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'))
+      .toContain('reasoningEffort: max')
+    expect(await slider.evaluate(element => document.activeElement === element)).toBe(true)
+    await slider.press('Home')
+    await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('Default')
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'))
+      .not.toMatch(/reasoningEffort:/)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 30_000)
+
+  it('previews a pointer drag and persists only on release', async () => {
+    const slider = page.getByRole('slider', { name: '推理等级', exact: true })
+    const box = await slider.boundingBox()
+    if (box === null) throw new Error('effort slider is not visible')
+    await page.mouse.move(box.x + 8, box.y + box.height / 2)
+    await page.mouse.down()
+    try {
+      await page.mouse.move(box.x + box.width - 8, box.y + box.height / 2, { steps: 5 })
+      await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('Max')
+      expect(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')).not.toMatch(/reasoningEffort:/)
+    } finally {
+      await page.mouse.up()
+    }
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'))
+      .toContain('reasoningEffort: max')
+  }, 30_000)
+
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
   })

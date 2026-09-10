@@ -252,3 +252,36 @@ describe('ModelSelect reasoning effort', () => {
     expect(load).not.toHaveBeenCalled()
   })
 })
+
+it('selects an advertised effort directly from the composer slider', async () => {
+  const directory = createSnapshotStore(state())
+  const select = vi.fn(() => Promise.resolve(true))
+  render(<ModelSelect locked={false} available directory={directory} load={() => {}} select={select} t={t} />)
+  const slider = screen.getByRole('slider', { name: '推理等级' })
+  expect(slider.getAttribute('aria-valuetext')).toBe('High')
+  fireEvent.change(slider, { target: { value: '2' } })
+  await waitFor(() =>{  expect(select).toHaveBeenCalledExactlyOnceWith({
+    provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max',
+  }) })
+  expect(screen.queryByRole('menu')).toBeNull()
+})
+
+it('hides the slider when the selected model has no reasoning choices', () => {
+  const directory = createSnapshotStore(state({ groups: [{
+    id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-v4-flash', name: 'Plain' }],
+  }] }))
+  render(<ModelSelect locked={false} available directory={directory} load={() => {}} select={() => Promise.resolve(true)} t={t} />)
+  expect(screen.queryByRole('slider')).toBeNull()
+})
+
+it('locks the slider with the composer and reports rejected effort changes', async () => {
+  const directory = createSnapshotStore(state({ error: 'denied' }))
+  const select = vi.fn(() => Promise.resolve(false))
+  const props = { available: true, directory, load: () => {}, select, t }
+  const view = render(<ModelSelect {...props} locked />)
+  expect(screen.getByRole('slider').hasAttribute('disabled')).toBe(true)
+  view.rerender(<ModelSelect {...props} locked={false} />)
+  fireEvent.change(screen.getByRole('slider'), { target: { value: '2' } })
+  await waitFor(() =>{  expect(screen.getByText('模型操作失败：denied')).toBeTruthy() })
+  expect(screen.getByRole('slider').getAttribute('aria-valuetext')).toBe('High')
+})

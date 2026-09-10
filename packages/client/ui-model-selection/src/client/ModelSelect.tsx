@@ -25,6 +25,7 @@ import {
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
+import { EffortSlider } from './EffortSlider.tsx'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
@@ -202,9 +203,9 @@ export function ModelSelect(
     close()
   }
 
-  const settleSelection = (accepted: boolean): void => {
+  const settleSelection = (accepted: boolean, restoreFocus = true): void => {
     if (accepted) {
-      if (rootRef.current !== null) close(true)
+      if (restoreFocus && rootRef.current !== null) close(true)
       return
     }
     const message = directory.getSnapshot().error
@@ -223,10 +224,10 @@ export function ModelSelect(
     void select(selection).then(settleSelection)
   }
 
-  const chooseEffort = (effort: string | undefined): void => {
+  const chooseEffort = (effort: string | undefined, restoreFocus = true): void => {
     if (state.current === null) return
     if (effectiveEffort === effort) {
-      close(true)
+      if (restoreFocus) close(true)
       return
     }
     const selection: ModelSelection = {
@@ -235,7 +236,7 @@ export function ModelSelect(
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
     lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    void select(selection).then((accepted) => { settleSelection(accepted, restoreFocus) })
   }
 
   const waiting = state.current === null && state.status === 'loading'
@@ -283,6 +284,21 @@ export function ModelSelect(
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
+
+      {reasoning !== undefined && effortChoices.length > 1 && (
+        <EffortSlider
+          key={JSON.stringify([state.current?.provider, state.current?.model, effortChoices])}
+          labels={effortChoices.map(choice => choice.label)}
+          value={Math.max(0, effortChoices.findIndex(choice => choice.effort === effectiveEffort))}
+          disabled={locked}
+          pending={busy}
+          label={t('menu.effort')}
+          onSelect={(index) => {
+            const choice = effortChoices[index]
+            if (choice !== undefined) chooseEffort(choice.effort, false)
+          }}
+        />
+      )}
 
       {/* Portaled to body (Menu primitive's portal mode) so the sidebar and
           column overflow clips cannot crop the card; synthetic events still
