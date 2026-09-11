@@ -19,7 +19,7 @@ import type {
   ComposerKeyboard, DraftAttachmentId, EditSelection, InputActions, InputNotice, InputState,
 } from './input.ts'
 import type { createConversationStore } from '../stores.ts'
-import type { BusyEnterBehavior } from './composer-submission.ts'
+import type { BusyEnterBehavior, EnterMode } from './composer-submission.ts'
 import type { ConversationSnapshot } from './snapshot.ts'
 import type { ViewTab } from './views.ts'
 
@@ -321,6 +321,8 @@ export interface ComposerBarInjected {
     busyEnter: ObservableSnapshot<BusyEnterBehavior>
     /** Live per-draft upload states for file-kind drafts. */
     fileUploads: ObservableSnapshot<DraftFileUploads>
+    /** Persisted idle-state Enter preference. */
+    enterMode: ObservableSnapshot<EnterMode>
     notices: ObservableSnapshot<InputNotice | null>
     lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>
     menuLauncher: ObservableSnapshot<string | null>

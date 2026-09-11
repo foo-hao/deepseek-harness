@@ -181,6 +181,7 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
         span: { ...selection, draftRev: snapshot.draftRev },
       })
     },
+    useEnterMode: selector => selector('send'),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(controller.launcher),

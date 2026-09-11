@@ -58,6 +58,8 @@ Disabled Send and Stop buttons suppress their tooltips, including a Stop button 
 
 File chips and editable skill references share a whole-reference hover background and follow the composer's line height and text baseline. The first click delegates preview opening to the registered reference source immediately, including the first click of a double-click sequence. Subsequent clicks retain native text selection; an existing noncollapsed selection suppresses pointer preview activation. Previewing does not change the draft, its clipboard projection, or submission.
 
+The General settings expose separate idle and busy Enter preferences. Idle Enter defaults to Send; Newline lets plain Enter insert an editor line break and Cmd/Ctrl+Enter send. Shift+Enter inserts a line break. Busy Enter retains Queue/Steer selection and the accelerated inverse. Menu selection and IME candidate confirmation take precedence. The idle newline placeholder retains its action prompt and explains both shortcuts. Both preferences persist through the Host settings service.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 
