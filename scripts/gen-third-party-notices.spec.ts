@@ -115,6 +115,42 @@ describe('tierExternalDeps', () => {
 })
 
 describe('virtualManifest', () => {
+  it.each(['ordinary', 'truncated', 'absent'] as const)('skips an incomplete old store entry before resolving %s installation', (layout) => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-notices-incomplete-'))
+    try {
+      const name = '@scope/pkg'
+      const store = join(fixtureRoot, 'store')
+      // An interrupted optional download leaves the version directory in the store.
+      mkdirSync(join(store, '@scope+pkg@1.0.0', 'node_modules'), { recursive: true })
+      if (layout !== 'absent') {
+        const entry = layout === 'ordinary' ? '@scope+pkg@2.0.0' : '@scope+pkg_truncated-hash'
+        const dir = join(store, entry, 'node_modules', name)
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '2.0.0', license: 'MIT' }))
+      }
+      if (layout === 'absent') {
+        expect(virtualManifest(store, name, '2.0.0')).toBeUndefined()
+      } else {
+        expect(virtualManifest(store, name, '2.0.0')).toMatchObject({ name, version: '2.0.0', license: 'MIT' })
+        expect(virtualManifest(store, name)).toMatchObject({ name, version: '2.0.0' })
+      }
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a malformed present manifest instead of treating it as an incomplete download', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-notices-malformed-'))
+    try {
+      const dir = join(fixtureRoot, '@scope+pkg@1.0.0', 'node_modules', '@scope/pkg')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), '{invalid json')
+      expect(() => virtualManifest(fixtureRoot, '@scope/pkg')).toThrow(SyntaxError)
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true })
+    }
+  })
+
   it('resolves a manifest from an ordinary prefix-matching store directory', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-notices-prefix-'))
     try {
