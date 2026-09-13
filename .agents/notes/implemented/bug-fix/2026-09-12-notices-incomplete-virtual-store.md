@@ -6,7 +6,7 @@ English | [中文](2026-09-12-notices-incomplete-virtual-store.zh.md)
 
 ## Problem
 
-An interrupted optional dependency installation can leave a version directory containing only an empty node_modules directory. The license generator's prefix lookup reads its manifest before checking the requested version, so an older incomplete entry aborts generation even when the requested version is fully installed elsewhere in the store.
+An interrupted optional dependency installation can leave a version directory containing only an empty node_modules directory. The license generator's prefix lookup reads its manifest before checking the requested version, so an incomplete entry visited before resolution aborts generation even when the requested version is fully installed elsewhere in the store. Directory enumeration order, rather than version age, determines whether lookup reaches that entry.
 
 ## Decision
 
@@ -18,4 +18,4 @@ Deleting stale store entries manually repairs one installation but requires cont
 
 ## Consequences
 
-Optional-install residue can coexist with complete package versions during notice generation. Regression fixtures cover ordinary and truncated complete entries after an incomplete older entry, an entirely absent requested installation, and a malformed present manifest. Each fixture owns and removes its temporary store.
+Optional-install residue can coexist with complete package versions during notice generation. Regression fixtures cover ordinary and truncated complete entries after an incomplete older entry, an entirely absent requested installation, and a malformed present manifest. An additional matrix controls enumeration order for both lower and higher incomplete version labels and for present and absent requested versions; file reads and parsing remain real. Each fixture owns and removes its temporary store.
